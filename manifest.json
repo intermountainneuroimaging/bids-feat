@@ -3,8 +3,12 @@
     "cite": "https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/FEAT#Referencing",
     "command": "python /flywheel/v0/run.py",
     "config": {
-      "task-name": {
-          "description": "One task may be selected for FEAT 1st level analysis. Task name must be consistent with naming used in preprocessing package.",
+      "task-list": {
+          "description": "Comma seperated list of tasks may be selected for FEAT 1st level analysis. Task name must be consistent with naming used in preprocessing package (e.g task-abc_run-01, task-abc_run-02).",
+          "type": "string"
+      },
+      "events-suffix": {
+          "description": "suffix used to select correct events file from bids curated dataset. Events may be pulled directly from acquisition container if no event file is passed as input.",
           "type": "string"
       },
       "output-name": {
@@ -112,11 +116,11 @@
         },
         "gear-builder": {
             "category": "analysis",
-            "image": "amhe4269/bids-feat:6.0.4_inc0.1rc0"
+            "image": "amhe4269/bids-feat:6.0.4_inc0.1rc1"
         },
         "license": "Apache-2.0"
     },
-    "description": "UNDER DEVELOPMENT!! (HPC Compatible) FSL's FEAT (FMRI Expert Analysis Tool). As implemented in this Gear, FEAT first level analysis will act on any generic bids compliant pipeline outputs. Voxelwise activation analyses for a single task will be generated. A template FSF design file is required, and all processing steps indicated in the design file will be followed.",
+    "description": "UNDER DEVELOPMENT!! (HPC Compatible) FSL's FEAT (FMRI Expert Analysis Tool). As implemented in this Gear, FEAT first level analysis will act on any generic bids compliant pipeline outputs. Voxelwise activation analyses for a single (or multiple) task will be generated. A template FSF design file is required, and all processing steps indicated in the design file will be followed.",
     "environment": {
         "FSF_OUTPUT_FORMAT": "nii.gz",
         "FSLDIR": "/opt/fsl-6.0.4",
@@ -155,9 +159,9 @@
         "base": "file",
         "optional": true
       },
-      "event-files": {
+      "event-file": {
         "base": "file",
-        "description": "Explanatory variable (EVs) custom text files. Identify in config options the event files type (BIDS-Formatted|FSL-3 Column Format|FSL-1 Entry Per Volume)",
+        "description": "Explanatory variable (EVs) custom text files. Identify in config options the event files type (BIDS-Formatted|FSL-3 Column Format|FSL-1 Entry Per Volume). If not event file is passed, events will be downloaded from flywheel acquisition.",
         "optional": true
       },
       "FSF_TEMPLATE" : {
@@ -177,5 +181,5 @@
     "name": "bids-feat",
     "source": "https://github.com/intermountainneuroimaging/hcp-fsl-feat",
     "url": "http://fsl.fmrib.ox.ac.uk/fsl/fslwiki/FEAT",
-    "version": "6.0.4_inc0.1rc0"
+    "version": "6.0.4_inc0.1rc1"
 }

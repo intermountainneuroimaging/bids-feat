@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from typing import List, Union
 
-from fw_gear_hcp_fsl_feat.main import run
+from fw_gear_bids_feat.main import run
 
 log = logging.getLogger(__name__)
 

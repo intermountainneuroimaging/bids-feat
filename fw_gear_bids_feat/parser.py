@@ -34,9 +34,9 @@ def parse_config(
         "environ": os.environ,
         "debug": gear_context.config.get("debug"),
         "preproc_zipfile": gear_context.get_input_path("preprocessing-pipeline-zip"),
-        "event_files": gear_context.get_input_path("event-files"),
         "FSF_TEMPLATE": gear_context.get_input_path("FSF_TEMPLATE")
     }
+
 
     # set the output dir name for the BIDS app:
     gear_options["output_analysis_id_dir"] = (
@@ -45,12 +45,13 @@ def parse_config(
 
     # ##   App options:   ## #
     app_options_keys = [
-        "task-name",
+        "task-list",
         "output-name",
         "confound-list",
         "DropNonSteadyState",
         "DummyVolumes",
-        "multirun"
+        "multirun",
+        "events-suffix"
     ]
     app_options = {key: gear_context.config.get(key) for key in app_options_keys}
 
@@ -72,6 +73,13 @@ def parse_config(
     else:
         app_options["confounds_default"] = True  # look for confounds in bids-derivative folder
 
+    # confounds file input
+    if gear_context.get_input_path("event-file"):
+        app_options["events-in-inputs"] = True
+        gear_options["event-file"] = gear_context.get_input_path("event-file")
+    else:
+        app_options["events-in-inputs"] = False  # look for events in flywheel acquisition
+
     # log filepaths
     log.info("Inputs file path, %s", gear_options["preproc_zipfile"])
     if app_options["additional_input"]:
@@ -89,9 +97,9 @@ def parse_config(
     if app_options["additional_input"]:
         unzip_inputs(gear_options, gear_options["additional_input_zip"])
 
-    # if task-name is a comma seperated list, apply nifti concatenation for analysis
-    if "," in app_options["task-name"]:
-        app_options["task-name"] = app_options["task-name"].split(",")
+    # if task-list is a comma seperated list, apply nifti concatenation for analysis
+    if "," in app_options["task-list"]:
+        app_options["task-list"] = app_options["task-list"].replace(" ","").split(",")
 
     # building fsf - use file mapper methods to generate bids filename and path
     destination = gear_context.client.get(gear_context.destination["id"])
@@ -121,11 +129,11 @@ def unzip_inputs(gear_options, zip_filename):
 
     # if unzipped directory is a destination id - move all outputs one level up
     with ZipFile(zip_filename, "r") as f:
-        top = {item.split('/')[0] for item in f.namelist()}
+        top = [item.split('/')[0] for item in f.namelist()]
 
-    if top[0] == 24:
+    if len(top[0]) == 24:
         # directory starts with flywheel destination id - obscure this for now...
-        cmd = "rsync -lu "+top[0]+'/* .'
+        cmd = "mv "+top[0]+'/* . ; rm -R '+top[0]
         execute_shell(cmd, cwd=gear_options["work-dir"])
 
     log.info("Done unzipping.")

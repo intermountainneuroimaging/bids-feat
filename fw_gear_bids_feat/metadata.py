@@ -36,8 +36,8 @@ def find_matching_acq(bids_name, context):
         acquisition and file objects matching the original image file on which the
         metrics were completed.
     """
-    fw = context.gtk_context.client
-    dest_id = context.gtk_context.destination["id"]
+    fw = context.client
+    dest_id = context.destination["id"]
     destination = fw.get(dest_id)
     session = fw.get_session(destination.parents["session"])
 

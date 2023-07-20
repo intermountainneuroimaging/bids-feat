@@ -63,6 +63,14 @@ RUN echo "Installing FSL conda environment ..." \
     && sed -i 's/dl_cmd_opts="--fail"/dl_cmd_opts="--fail -L"/g' $python_install \
     && bash $python_install -f /opt/fsl-6.0.4
 
+# install zip and unzip
+RUN apt-get update -qq \
+    && apt-get install -y -q --no-install-recommends \
+           zip \
+           unzip \
+           rsync \
+    && apt-get clean
+
 ######################################################
 # FLYWHEEL GEAR STUFF...
 
