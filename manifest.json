@@ -8,16 +8,19 @@
           "type": "string"
       },
       "events-suffix": {
+          "optional": true,
           "description": "suffix used to select correct events file from bids curated dataset. Events may be pulled directly from acquisition container if no event file is passed as input.",
           "type": "string"
       },
       "output-name": {
+          "optional": true,
           "description": "[NAME].feat directory name. If left blank, output name will be drawn from the fsf template file.",
           "type": "string"
       },
       "confound-list": {
+          "optional": true,
           "type":"string",
-          "description": "Comma seperated list of components to be included in feat glm confounds. Confound timeseries will be pulled from confound file in inputs if passed, otherwise defaults to using bids derivative file '*counfound_timeseries.tsv'. Example entry: rot_x, rot_y, rot_z, trans_x, trans_y, trans_z"
+          "description": "Comma seperated list of components to be included in feat glm confounds. Confound timeseries will be pulled from confound file in inputs if passed, otherwise defaults to using bids derivative file '*counfound_timeseries.tsv'. Example entry: rot_x, rot_y, rot_z, trans_x, trans_y, trans_z. If left blank no confounds will be included in feat analysis."
       },
       "DropNonSteadyState": {
           "type": "boolean",
@@ -58,12 +61,12 @@
           "type": "string"
       },
       "slurm-cpu": {
-          "default": "1",
+          "default": "2",
           "description": "[SLURM] How many cpu-cores to request per command/task. This is used for the underlying '--cpus-per-task' option. If not running on HPC, then this flag is ignored",
           "type": "string"
       },
       "slurm-ram": {
-          "default": "12G",
+          "default": "16G",
           "description": "[SLURM] How much RAM to request. This is used for the underlying '--mem-per-cpu' option. If not running on HPC, then this flag is ignored",
           "type": "string"
       },
@@ -116,7 +119,7 @@
         },
         "gear-builder": {
             "category": "analysis",
-            "image": "amhe4269/bids-feat:6.0.4_inc0.1rc1"
+            "image": "amhe4269/bids-feat:6.0.4_inc0.1rc2"
         },
         "license": "Apache-2.0"
     },
@@ -181,5 +184,5 @@
     "name": "bids-feat",
     "source": "https://github.com/intermountainneuroimaging/hcp-fsl-feat",
     "url": "http://fsl.fmrib.ox.ac.uk/fsl/fslwiki/FEAT",
-    "version": "6.0.4_inc0.1rc1"
+    "version": "6.0.4_inc0.1rc2"
 }

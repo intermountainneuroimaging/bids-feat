@@ -2,27 +2,17 @@
 
 import logging
 import os
-import os.path as op
-import glob
 from pathlib import Path
-from typing import List, Tuple
 import subprocess as sp
 import numpy as np
 import pandas as pd
-import sys
 import re
 import shutil
 import tempfile
-from collections import OrderedDict
 from zipfile import ZIP_DEFLATED, ZipFile
 import errorhandler
 from typing import List, Tuple, Union
 import nibabel as nib
-import stat
-from flywheel_gear_toolkit.utils.zip_tools import zip_output
-from nipype.algorithms.confounds import ACompCor
-from nipype.interfaces import fsl
-from nipype.interfaces.fsl.maths import ErodeImage
 from flywheel_gear_toolkit import GearToolkitContext
 
 from utils.command_line import exec_command
@@ -233,6 +223,8 @@ def generate_confounds_file(gear_options: dict, app_options: dict, gear_context:
     dummy_scans = app_options['AcqDummyVolumes']
     nvols = app_options['AcqNumFrames']
 
+    log.info("Using %s volumes in confounds file...", str(nvols))
+
     if dummy_scans > 0:
 
         arr = np.zeros([nvols, dummy_scans])
@@ -385,12 +377,23 @@ def identify_feat_paths(gear_options: dict, app_options: dict):
     func_file_name = locate_by_pattern(design_file, r'set feat_files\(1\) "(.*)"')
     app_options["func_file"] = apply_lookup(func_file_name[0], lookup_table)
     app_options["funcpath"] = os.path.dirname(app_options["func_file"])
+    if not searchfiles(app_options["func_file"]):
+        log.error("Unable to locate functional file...exiting.")
+    else:
+        log.info("Using functional file: %s", app_options["func_file"])
 
     # check if higres structural registration is set to True
     highres_yn = locate_by_pattern(design_file, r'set fmri\(reghighres_yn\) (.*)')
     if int(highres_yn[0]):
         highres_file_name = locate_by_pattern(design_file, r'set highres_files\(1\) "(.*)"')
         app_options["highres_file"] = apply_lookup(highres_file_name[0], lookup_table)
+
+        if not searchfiles(app_options["highres_file"]):
+            log.error("Unable to locate highres file...exiting.")
+        else:
+            log.info("Using highres file: %s", app_options["highres_file"])
+    else:
+        log.info("Skipping highres registration.")
 
     # check if confounds file is defined in model
     confound_yn = locate_by_pattern(design_file, r'set fmri\(confoundevs\) (.*)')
@@ -402,6 +405,11 @@ def identify_feat_paths(gear_options: dict, app_options: dict):
             # find confounds file...
             input_path = searchfiles(os.path.join(app_options["funcpath"], "*"+task+"*confounds_timeseries.tsv"))
             gear_options["confounds_file"] = input_path[0]
+
+            if not input_path:
+                log.error("Unable to locate confounds file...exiting.")
+            else:
+                log.info("Using confounds file: %s", gear_options["confounds_file"])
 
     return app_options
 
@@ -641,10 +649,13 @@ def execute_shell(cmd, dryrun=False, cwd=os.getcwd()):
             cwd=cwd
         )
         stdout, stderr = terminal.communicate()
-        log.info("\n %s", stdout)
-        log.info("\n %s", stderr)
+        returnCode = terminal.poll()
+        log.debug("\n %s", stdout)
+        log.debug("\n %s", stderr)
 
-        return stdout
+        if returnCode > 0:
+            log.error("Error. \n%s\n%s", stdout, stderr)
+        return returnCode
 
 
 def searchfiles(path, dryrun=False) -> list[str]:
@@ -657,10 +668,15 @@ def searchfiles(path, dryrun=False) -> list[str]:
             cmd, shell=True, stdout=sp.PIPE, stderr=sp.PIPE, universal_newlines=True
         )
         stdout, stderr = terminal.communicate()
+        returnCode = terminal.poll()
         log.debug("\n %s", stdout)
         log.debug("\n %s", stderr)
 
         files = stdout.strip("\n").split("\n")
+
+        if returnCode > 0:
+            log.error("Error. \n%s\n%s", stdout, stderr)
+
         return files
 
 

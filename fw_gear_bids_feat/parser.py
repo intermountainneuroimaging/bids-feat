@@ -4,15 +4,13 @@ from zipfile import ZipFile
 from flywheel_gear_toolkit import GearToolkitContext
 import os
 import logging
-import glob
-import subprocess as sp
-from pathlib import Path
-from fw_gear_bids_feat.main import searchfiles
-from fw_gear_bids_feat.main import concat_nifti, concat_motion
 from fw_gear_bids_feat.main import execute_shell
+import errorhandler
 
 log = logging.getLogger(__name__)
 
+# Track if message gets logged with severity of error or greater
+error_handler = errorhandler.ErrorHandler()
 
 def parse_config(
         gear_context: GearToolkitContext,
@@ -24,6 +22,7 @@ def parse_config(
         app_options: options to pass to the app
     """
     # ##   Gear config   ## #
+    errors = []
 
     gear_options = {
         "dry-run": gear_context.config.get("gear-dry-run"),
@@ -122,6 +121,8 @@ def unzip_inputs(gear_options, zip_filename):
             'gear-dry-run': boolean to enact a dry run for debugging
         zip_filename (string): The file to be unzipped
     """
+    rc = 0
+
     # use linux "unzip" methods in shell in case symbolic links exist
     log.info("Unzipping file, %s", zip_filename)
     cmd = "unzip " + zip_filename + " -d " + str(gear_options["work-dir"])
@@ -137,5 +138,12 @@ def unzip_inputs(gear_options, zip_filename):
         execute_shell(cmd, cwd=gear_options["work-dir"])
 
     log.info("Done unzipping.")
+
+    if error_handler.fired:
+        log.critical('Failure: exiting with code 1 due to logged errors')
+        run_error = 1
+        return run_error
+
+    return rc
 
 
