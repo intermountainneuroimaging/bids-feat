@@ -362,7 +362,7 @@ def identify_feat_paths(gear_options: dict, app_options: dict):
         log.error("Unable to interpret pipeline for analysis. Contact gear maintainer for more details.")
     gear_options["pipeline"] = pipeline
 
-    lookup_table = {"PIPELINE": pipeline, "SUBJECT": app_options["sid"], "SESSION": app_options["sesid"], "TASK": app_options["task"]}
+    lookup_table = {"WORKDIR": str(gear_options["work-dir"]), "PIPELINE": pipeline, "SUBJECT": app_options["sid"], "SESSION": app_options["sesid"], "TASK": app_options["task"]}
 
     # special exception - fmriprep produces non-zeropaded run numbers - fix this only for applying lookup table here
     if pipeline == "fmriprep":
@@ -371,8 +371,7 @@ def identify_feat_paths(gear_options: dict, app_options: dict):
             if "run" in task[idx]:
                 task[idx] = task[idx].replace("-0","-")
         task = "_".join(task)
-        lookup_table = {"PIPELINE": pipeline, "SUBJECT": app_options["sid"], "SESSION": app_options["sesid"],
-                        "TASK": task}
+        lookup_table["TASK"] = task
 
     func_file_name = locate_by_pattern(design_file, r'set feat_files\(1\) "(.*)"')
     app_options["func_file"] = apply_lookup(func_file_name[0], lookup_table)

@@ -113,6 +113,7 @@ def main(context: GearToolkitContext):
 # Only execute if file is run as main, not when imported by another module
 if __name__ == "__main__":  # pragma: no cover
     # Get access to gear config, inputs, and sdk client if enabled.
+    # os.environ["SINGULARITY_NAME"] = "test"
     with GearToolkitContext() as gear_context:
         scratch_dir = run_in_tmp_dir(gear_context.config["gear-writable-dir"])
     # Has to be instantiated twice here, since parent directories might have
