@@ -50,7 +50,8 @@ def parse_config(
         "DropNonSteadyState",
         "DummyVolumes",
         "multirun",
-        "events-suffix"
+        "events-suffix",
+        "evformat"
     ]
     app_options = {key: gear_context.config.get(key) for key in app_options_keys}
 
@@ -75,7 +76,15 @@ def parse_config(
     # confounds file input
     if gear_context.get_input_path("event-file"):
         app_options["events-in-inputs"] = True
-        gear_options["event-file"] = gear_context.get_input_path("event-file")
+        app_options["event-file"] = gear_context.get_input_path("event-file")
+
+        if ".zip" in app_options["event-file"]:
+            # event files passed as zip
+            rcc, app_options["event_dir"] = unzip_inputs(gear_options, app_options["event-file"])
+
+        else:
+            app_options["event_dir"] = os.path.dirname(app_options["event-file"])
+
     else:
         app_options["events-in-inputs"] = False  # look for events in flywheel acquisition
 
@@ -122,28 +131,33 @@ def unzip_inputs(gear_options, zip_filename):
         zip_filename (string): The file to be unzipped
     """
     rc = 0
-
+    outpath=[]
     # use linux "unzip" methods in shell in case symbolic links exist
     log.info("Unzipping file, %s", zip_filename)
-    cmd = "unzip " + zip_filename + " -d " + str(gear_options["work-dir"])
+    cmd = "unzip -o " + zip_filename + " -d " + str(gear_options["work-dir"])
     execute_shell(cmd, cwd=gear_options["work-dir"])
 
     # if unzipped directory is a destination id - move all outputs one level up
     with ZipFile(zip_filename, "r") as f:
         top = [item.split('/')[0] for item in f.namelist()]
+        top1 = [item.split('/')[1] for item in f.namelist()]
+
+    log.info("Done unzipping.")
 
     if len(top[0]) == 24:
         # directory starts with flywheel destination id - obscure this for now...
         cmd = "mv "+top[0]+'/* . ; rm -R '+top[0]
         execute_shell(cmd, cwd=gear_options["work-dir"])
-
-    log.info("Done unzipping.")
+        for i in set(top1):
+            outpath.append(os.path.join(gear_options["work-dir"], i))
+    else:
+        outpath = os.path.join(gear_options["work-dir"], top[0])
 
     if error_handler.fired:
         log.critical('Failure: exiting with code 1 due to logged errors')
         run_error = 1
         return run_error
 
-    return rc
+    return rc, outpath
 
 

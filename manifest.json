@@ -39,6 +39,16 @@
           "default": false,
           "description": "select to concatenate all tasks in 'task-list' before running feat analysis. Otherwise each run will be run independently."
       },
+      "evformat": {
+        "default": "BIDS-Formatted",
+        "description": "Select type of explanatory variable. Selected format should match format provided in the events input file, or files downloaded directly from flywheel acquisition. Options: BIDS-Formatted|FSL-3 Column Format|FSL-1 Entry Per Volume.",
+        "type": "string",
+        "enum": [
+          "BIDS-Formatted",
+          "FSL-3 Column Format",
+          "FSL-1 Entry Per Volume"
+        ]
+      },
       "gear-log-level": {
         "default": "INFO",
         "description": "Gear Log verbosity level (ERROR|WARNING|INFO|DEBUG)",
@@ -119,7 +129,7 @@
         },
         "gear-builder": {
             "category": "analysis",
-            "image": "amhe4269/bids-feat:6.0.4_inc0.1rc3"
+            "image": "amhe4269/bids-feat:6.0.4_inc0.1rc4"
         },
         "license": "Apache-2.0"
     },
@@ -184,5 +194,5 @@
     "name": "bids-feat",
     "source": "https://github.com/intermountainneuroimaging/hcp-fsl-feat",
     "url": "http://fsl.fmrib.ox.ac.uk/fsl/fslwiki/FEAT",
-    "version": "6.0.4_inc0.1rc3"
+    "version": "6.0.4_inc0.1rc4"
 }

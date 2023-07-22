@@ -93,16 +93,27 @@ def run(gear_options: dict, app_options: dict, gear_context: GearToolkitContext)
         identify_feat_paths(gear_options, app_options)
 
         # add all confounds from selected list to feat confounds (for each task in list)
-        app_options = generate_confounds_file(gear_options, app_options, gear_context)
+        generate_confounds_file(gear_options, app_options, gear_context)
 
-        # prepare events files (for each task in list)
-        if not app_options["events-in-inputs"]:
-            download_event_files(gear_options, app_options, gear_context)
-        app_options = generate_ev_files(gear_options, app_options)
+        df = pd.DataFrame({"func_file": app_options["func_file"], "funcpath": app_options["funcpath"],
+                           "highres_file": app_options["highres_file"],
+                           "feat_confounds_file": app_options["feat_confounds_file"],
+                           "trs": app_options["trs"], "nvols": app_options["nvols"], "AcqDummyVolumes": app_options["AcqDummyVolumes"]}, index=[0])
+
+        if "summary_frame" not in app_options:
+            app_options["summary_frame"] = df
+        else:
+            app_options["summary_frame"] = pd.concat([app_options["summary_frame"], df], ignore_index=True)
 
         if not app_options["multirun"]:
+
+            # prepare events files (for each task in list) -- only download acq events for non multirun config
+            if not app_options["events-in-inputs"]:
+                download_event_files(gear_options, app_options, gear_context)
+            generate_ev_files(gear_options, app_options)
+
             # prepare fsf design file
-            app_options = generate_design_file(gear_options, app_options)
+            generate_design_file(gear_options, app_options)
 
             # generate command - "stage" commands for final run
             commands.append(generate_command(gear_options, app_options))
@@ -110,11 +121,22 @@ def run(gear_options: dict, app_options: dict, gear_context: GearToolkitContext)
 
     # if more than one task is entered, concatenate
     if len(app_options["task-list"]) > 1 and app_options["multirun"]:
-        # combine_files and run
-        app_options["task"] = "combined"
 
-        # currently do nothing else...
-        log.error("Feature for multirun not yet available")
+        app_options["task"] = "concatenated"
+
+        # concatenate input files nifti and confounds
+        concat_files(gear_options, app_options)
+
+        # pull event files - must be passed as events zip otherwise throw error, update event directory location...
+        if not app_options["events-in-inputs"]:
+            log.error("When using multirun configuration, event file must be passed as input for analysis.... exiting with errors.")
+        generate_ev_files(gear_options, app_options)
+
+        # generate new desgin file...
+        generate_design_file(gear_options, app_options)
+
+        # generate command
+        commands.append(generate_command(gear_options, app_options))
 
 
     if error_handler.fired:
@@ -309,11 +331,12 @@ def generate_ev_files(gear_options: dict, app_options: dict):
 
     # for now, assume evs are bids format tsvs.... update this!!!
 
-    outpath = os.path.join(app_options["funcpath"], "events_"+app_options["task"])
-    os.makedirs(outpath, exist_ok=True)
+    evformat = app_options["evformat"]
+    if evformat == "BIDS-Formatted":
 
-    evformat = "bids"
-    if evformat == "bids":
+        outpath = os.path.join(app_options["funcpath"], "events_" + app_options["task"])
+        os.makedirs(outpath, exist_ok=True)
+
         df = pd.read_csv(app_options["event-file"], sep="\t")
 
         groups = df["trial_type"].unique()
@@ -329,7 +352,11 @@ def generate_ev_files(gear_options: dict, app_options: dict):
                                     os.path.basename(app_options["event-file"]).replace(".tsv", "-" + g + ".txt"))
             ev1.to_csv(filename, sep=" ", index=False, header=False)
 
-    app_options["event_dir"] = outpath
+            app_options["event_dir"] = outpath
+
+    elif evformat == "FSL-1 Entry Per Volume" or evformat == "FSL-3 Column Format":
+        # do nothing, use unzipped events directory for event dir
+        pass
 
     return app_options
 
@@ -360,7 +387,7 @@ def identify_feat_paths(gear_options: dict, app_options: dict):
         pipeline = os.walk(gear_options["work-dir"]).next()[1]
     else:
         log.error("Unable to interpret pipeline for analysis. Contact gear maintainer for more details.")
-    gear_options["pipeline"] = pipeline
+    app_options["pipeline"] = pipeline
 
     lookup_table = {"WORKDIR": str(gear_options["work-dir"]), "PIPELINE": pipeline, "SUBJECT": app_options["sid"], "SESSION": app_options["sesid"], "TASK": app_options["task"]}
 
@@ -410,8 +437,26 @@ def identify_feat_paths(gear_options: dict, app_options: dict):
             else:
                 log.info("Using confounds file: %s", gear_options["confounds_file"])
 
-    return app_options
+    # scan length
+    cmd = "fslnvols " + app_options["func_file"]
+    log.debug("\n %s", cmd)
+    terminal = sp.Popen(
+        cmd, shell=True, stdout=sp.PIPE, stderr=sp.PIPE, universal_newlines=True
+    )
+    stdout, stderr = terminal.communicate()
+    app_options["nvols"] = stdout.strip("\n")
 
+    # repetition time
+    cmd = "fslval " + app_options["func_file"] +" pixdim4"
+    log.debug("\n %s", cmd)
+    terminal = sp.Popen(
+        cmd, shell=True, stdout=sp.PIPE, stderr=sp.PIPE, universal_newlines=True
+    )
+    stdout, stderr = terminal.communicate()
+    app_options["trs"] = stdout.strip("\n")
+
+
+    return app_options
 
 def generate_design_file(gear_options: dict, app_options: dict):
     """
@@ -439,25 +484,11 @@ def generate_design_file(gear_options: dict, app_options: dict):
     # 2. func path
     replace_line(design_file, r'set feat_files\(1\)', 'set feat_files(1) "' + app_options["func_file"] + '"')
 
-    # 3. total func length??
-    cmd = "fslnvols " + app_options["func_file"]
-    log.debug("\n %s", cmd)
-    terminal = sp.Popen(
-        cmd, shell=True, stdout=sp.PIPE, stderr=sp.PIPE, universal_newlines=True
-    )
-    stdout, stderr = terminal.communicate()
-    nvols = stdout.strip("\n")
-    replace_line(design_file, r'set fmri\(npts\)', 'set fmri(npts) ' + nvols)
+    # 3. total func length
+    replace_line(design_file, r'set fmri\(npts\)', 'set fmri(npts) ' + app_options["nvols"])
 
     # 3a. repetition time (TR)
-    cmd = "fslval " + app_options["func_file"] +" pixdim4"
-    log.debug("\n %s", cmd)
-    terminal = sp.Popen(
-        cmd, shell=True, stdout=sp.PIPE, stderr=sp.PIPE, universal_newlines=True
-    )
-    stdout, stderr = terminal.communicate()
-    trs = stdout.strip("\n")
-    replace_line(design_file, r'set fmri\(tr\)', 'set fmri(tr) ' + trs)
+    replace_line(design_file, r'set fmri\(tr\)', 'set fmri(tr) ' + app_options["trs"])
 
     # TODO check registration consistency
 
@@ -508,56 +539,37 @@ def generate_design_file(gear_options: dict, app_options: dict):
     if allfiles:
         app_options["ev_files"] = allfiles
 
+
     return app_options
 
 
-def concat_nifti(gear_options: dict, app_options: dict):
+def concat_files(gear_options: dict, app_options: dict):
 
-    zerocenter_list = []; tmean_list = [];
+    zerocenter_list = []
+    tmean_list = []
 
+    #  ----------- CONCATENATE NIFTI FILES -----------  #
     with tempfile.TemporaryDirectory(dir=gear_options["work-dir"]) as tmpdir:
 
-        for task in app_options["task-list"]:
+        df = app_options["summary_frame"]
+        for idx in df.index:
 
-            funcpath = searchfiles(os.path.join(gear_options["work-dir"], "**", "MNINonLinear", "Results",
-                                                "*" + task + "*"))
-            funcpath = funcpath[0]
-
-            if app_options["icafix"]:
-                funcfile = searchfiles(os.path.join(funcpath, "*clean.nii.gz"))
-                infile = funcfile[0]
-            else:
-                funcfile = searchfiles(os.path.join(funcpath, "*_bold.nii.gz"))
-                infile = funcfile[0]
-
-            # 1. create a noise image
-            img = nib.load(infile)
-            noise = np.random.randn(img.shape[0], img.shape[1], img.shape[2], app_options["dummy-scans"])
-            nim = nib.Nifti1Image(noise.astype('f'), img.affine, img.header)
-            noise_fname = os.path.join(tmpdir, 'noise.nii.gz')
-            nib.save(nim, noise_fname)
-
-            # 2. from orginal image, create a trimmed series
+            # 2. from original image, create a trimmed series
             trim_fname = os.path.join(tmpdir, 'trimmed.nii.gz')
-            cmd = "fslroi " + infile + " " + trim_fname + " " + str(app_options["dummy-scans"]) + " -1"
+            cmd = "fslroi " + df["func_file"][idx] + " " + trim_fname + " " + str(df['AcqDummyVolumes'][idx]) + " -1"
             execute_shell(cmd, gear_options["dry-run"])
 
             # 3. using trimmed file, compute temporal mean
-            tmean_fname = os.path.join(tmpdir, Path(infile).name.replace(".nii.gz", "_meanfunc.nii.gz"))
+            tmean_fname = os.path.join(tmpdir, Path(df["func_file"][idx]).name.replace(".nii.gz", "_meanfunc.nii.gz"))
             cmd = "fslmaths " + trim_fname + " -Tmean " + tmean_fname
             execute_shell(cmd, gear_options["dry-run"])
 
             tmean_list.append(tmean_fname)
 
             # 4 remove temporal mean from trimmed datset
-            demeaned_fname = os.path.join(tmpdir, 'trimmed_zerocenter.nii.gz')
-            cmd = "fslmaths " + trim_fname + " -sub " + tmean_fname + " " + demeaned_fname + " -odt float"
-            execute_shell(cmd, gear_options["dry-run"])
-
-            # 5. concatenate adjusted noise model and trimmed timeseries
             output_zerocenter = os.path.join(tmpdir,
-                                             Path(infile).name.replace(".nii.gz", "_withnoise.nii.gz"))
-            cmd = "fslmerge -t " + output_zerocenter + " " + noise_fname + " " + demeaned_fname
+                                       Path(df["func_file"][idx]).name.replace(".nii.gz", "_zerocenter.nii.gz"))
+            cmd = "fslmaths " + df["func_file"][idx] + " -sub " + tmean_fname + " " + output_zerocenter + " -odt float"
             execute_shell(cmd, gear_options["dry-run"])
 
             zerocenter_list.append(output_zerocenter)
@@ -579,38 +591,28 @@ def concat_nifti(gear_options: dict, app_options: dict):
         execute_shell(cmd, gear_options["dry-run"])
 
         # and add temporal mean back to concatenated dataset
-        pardir = searchfiles(os.path.join(gear_options["work-dir"], "**", "MNINonLinear", "Results"))
-        os.makedirs(os.path.join(pardir[0],"concatenated"),exist_ok=True)
+        parentdir = os.path.join(app_options["work-dir"], app_options["pipeline"], "sub-"+app_options["sid"], "ses-"+app_options["sesid"], "concatenated")
+        os.makedirs(parentdir,exist_ok=True)
 
-        final_output = os.path.join(pardir[0], "concatenated", "concatenated_withnoise.nii.gz")
+        final_output = os.path.join(parentdir, "concatenated.nii.gz")
         cmd = "fslmaths " + itr_fname + " -add " + tmean_fname + " " + final_output
         execute_shell(cmd, gear_options["dry-run"])
 
         app_options["func_file"] = final_output
-        app_options["funcpath"] = os.path.join(pardir[0], "concatenated")
+        app_options["funcpath"] = parentdir
 
-        return app_options
+    #  ----------- CONCATENATE CONFOUND FILES -----------  #
+    df = app_options["summary_frame"]
+    file_list = list(df["feat_confounds_file"].values)
+    outfile = os.path.join(parentdir, "feat-confounds.txt")
+    cmd = "cat " + " ".join(file_list) + " > " + outfile
+    execute_shell(cmd, gear_options["dry-run"])
 
-def concat_motion(gear_options: dict, app_options: dict):
-    files = []
-    for task in app_options["task-list"]:
-        motion = searchfiles(os.path.join(gear_options["work-dir"], "**", "MNINonLinear", "Results",
-                                            "*" + task + "*","Movement_Regressors.txt"))
+    app_options["feat_confounds_file"] = outfile
 
-        files.append(motion[0])
-    log.info("Concatenating Motion files: \n%s",'\n'.join(files))
-
-    cmd = 'cat '+" ".join(files) + ' > ' + os.path.join(app_options["funcpath"], "Movement_Regressors.txt")
-    log.debug("\n %s", cmd)
-    terminal = sp.Popen(
-        cmd, shell=True, stdout=sp.PIPE, stderr=sp.PIPE, universal_newlines=True
-    )
-    stdout, stderr = terminal.communicate()
-    log.debug("\n %s", stdout)
-    log.debug("\n %s", stderr)
+    ## TODO: consider adding a run identifier confound
 
     return app_options
-
 
 
 def generate_command(
