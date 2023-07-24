@@ -162,7 +162,7 @@ def run(gear_options: dict, app_options: dict, gear_context: GearToolkitContext)
 
         for featdir in featdirs:
             # Create output directory
-            output_analysis_id_dir = os.path.join(gear_options["destination-id"], gear_options["pipeline"], "feat","sub-" + app_options["sid"], "ses-" + app_options["sesid"])
+            output_analysis_id_dir = os.path.join(gear_options["destination-id"], app_options["pipeline"], "feat","sub-" + app_options["sid"], "ses-" + app_options["sesid"])
             Path(os.path.join(gear_options["work-dir"], output_analysis_id_dir)).mkdir(parents=True, exist_ok=True)
 
             log.info("Using output path %s", os.path.join(output_analysis_id_dir, os.path.basename(featdir)))
