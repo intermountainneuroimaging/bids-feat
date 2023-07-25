@@ -601,6 +601,9 @@ def concat_files(gear_options: dict, app_options: dict):
         app_options["func_file"] = final_output
         app_options["funcpath"] = parentdir
 
+        # pull new number of volumes
+        app_options["nvols"] = str(df["nvols"].astype(int).sum())
+
     #  ----------- CONCATENATE CONFOUND FILES -----------  #
     df = app_options["summary_frame"]
     file_list = list(df["feat_confounds_file"].values)
