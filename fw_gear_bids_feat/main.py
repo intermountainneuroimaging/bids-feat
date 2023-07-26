@@ -429,7 +429,7 @@ def identify_feat_paths(gear_options: dict, app_options: dict):
         # select confound file location
         if app_options["confounds_default"]:
             # find confounds file...
-            input_path = searchfiles(os.path.join(app_options["funcpath"], "*"+task+"*confounds_timeseries.tsv"))
+            input_path = searchfiles(os.path.join(app_options["funcpath"], "*"+lookup_table["TASK"]+"*confounds_timeseries.tsv"))
             gear_options["confounds_file"] = input_path[0]
 
             if not input_path:
