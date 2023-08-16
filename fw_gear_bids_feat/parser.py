@@ -150,6 +150,9 @@ def unzip_inputs(gear_options, zip_filename):
         execute_shell(cmd, cwd=gear_options["work-dir"])
         for i in set(top1):
             outpath.append(os.path.join(gear_options["work-dir"], i))
+
+        # get previous gear info
+        gear_options["preproc_gear"] = gear_options["client"].get(top[0])
     else:
         outpath = os.path.join(gear_options["work-dir"], top[0])
 

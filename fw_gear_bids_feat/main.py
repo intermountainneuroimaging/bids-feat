@@ -393,12 +393,17 @@ def identify_feat_paths(gear_options: dict, app_options: dict):
 
     # special exception - fmriprep produces non-zeropaded run numbers - fix this only for applying lookup table here
     if pipeline == "fmriprep":
-        task = app_options["task"].split("_")
-        for idx, prt in enumerate(task):
-            if "run" in task[idx]:
-                task[idx] = task[idx].replace("-0","-")
-        task = "_".join(task)
-        lookup_table["TASK"] = task
+        # zero padding only relevent for versions less than v23
+        if "preproc_gear" in gear_options:
+            # check the version
+            version = gear_options["preproc_gear"]["gear_info"]["version"]
+            if version.split("_")[1] < "23.0.0":
+                task = app_options["task"].split("_")
+                for idx, prt in enumerate(task):
+                    if "run" in task[idx]:
+                        task[idx] = task[idx].replace("-0","-")
+                task = "_".join(task)
+                lookup_table["TASK"] = task
 
     func_file_name = locate_by_pattern(design_file, r'set feat_files\(1\) "(.*)"')
     app_options["func_file"] = apply_lookup(func_file_name[0], lookup_table)
@@ -526,7 +531,7 @@ def generate_design_file(gear_options: dict, app_options: dict):
 
         log.info("Located explanatory variable %s: %s", num, evname)
 
-        evfiles = searchfiles(os.path.join(app_options["event_dir"], "*" + evname + "*"))
+        evfiles = searchfiles(os.path.join(app_options["event_dir"], "*-" + evname + ".txt"))
 
         if len(evfiles) > 1 or evfiles[0] == '':
             log.error("Problem locating event files programmatically... check event names and re-run.")
