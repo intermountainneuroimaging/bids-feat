@@ -274,7 +274,7 @@ def generate_confounds_file(gear_options: dict, app_options: dict, gear_context:
     # assign final confounds file for task
     if not all_confounds_df.empty:
         all_confounds_df.to_csv(os.path.join(app_options["funcpath"], 'feat-confounds_'+app_options["task"]+'.txt'), header=False, index=False,
-                                sep=" ")
+                                sep=" ", na_rep=0)
         app_options["feat_confounds_file"] = os.path.join(app_options["funcpath"], 'feat-confounds_'+app_options["task"]+'.txt')
 
     return app_options
