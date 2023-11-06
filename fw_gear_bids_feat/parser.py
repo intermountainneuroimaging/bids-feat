@@ -51,7 +51,9 @@ def parse_config(
         "DummyVolumes",
         "multirun",
         "events-suffix",
-        "evformat"
+        "evformat",
+        "allow-missing-evs",
+        "run-level"
     ]
     app_options = {key: gear_context.config.get(key) for key in app_options_keys}
 
@@ -69,11 +71,11 @@ def parse_config(
     # confounds file input
     if gear_context.get_input_path("additional-input-one"):
         app_options["confounds_default"] = False
-        gear_options["confounds_file"] = gear_context.get_input_path("confounds-file")
+        app_options["confounds_file"] = gear_context.get_input_path("confounds-file")
     else:
         app_options["confounds_default"] = True  # look for confounds in bids-derivative folder
 
-    # confounds file input
+    # events file input
     if gear_context.get_input_path("event-file"):
         app_options["events-in-inputs"] = True
         app_options["event-file"] = gear_context.get_input_path("event-file")

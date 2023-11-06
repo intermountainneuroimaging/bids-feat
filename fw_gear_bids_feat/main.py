@@ -11,8 +11,7 @@ import shutil
 import tempfile
 from zipfile import ZIP_DEFLATED, ZipFile
 import errorhandler
-from typing import List, Tuple, Union
-import nibabel as nib
+from typing import List, Tuple
 from flywheel_gear_toolkit import GearToolkitContext
 
 from utils.command_line import exec_command
@@ -260,19 +259,29 @@ def generate_confounds_file(gear_options: dict, app_options: dict, gear_context:
 
     if app_options['confound-list']:
         # load confounds file - the pull relevant columns
-        log.info("Using confounds spreadsheet: %s", str(gear_options["confounds_file"]))
-        data = pd.read_csv(gear_options["confounds_file"], sep='\t')
+        log.info("Using confounds spreadsheet: %s", str(app_options["confounds_file"]))
+        data = pd.read_csv(app_options["confounds_file"], sep='\t')
 
         # pull relevant columns for feat
         colnames = app_options['confound-list'].replace(" ","").split(",")
         for cc in colnames:
+
+            # look for exact matches...
             if cc in data.columns:
                 all_confounds_df = pd.concat([all_confounds_df, data[cc]], axis=1)
+
+            # handle regular expression entries
+            elif any(special_char in cc for special_char in ["*","^","$","+"]):
+                pattern = re.compile(cc)
+                for regex_col in [s for s in data.columns if bool(re.search(pattern, s))]:
+                    all_confounds_df = pd.concat([all_confounds_df, data[regex_col]], axis=1)
+
             else:
                 log.info("WARNING: data column %s missing from confounds file.", cc)
 
     # assign final confounds file for task
     if not all_confounds_df.empty:
+        log.info("Including confounds: %s", ", ".join(all_confounds_df.columns))
         all_confounds_df.to_csv(os.path.join(app_options["funcpath"], 'feat-confounds_'+app_options["task"]+'.txt'), header=False, index=False,
                                 sep=" ", na_rep=0)
         app_options["feat_confounds_file"] = os.path.join(app_options["funcpath"], 'feat-confounds_'+app_options["task"]+'.txt')
@@ -299,7 +308,12 @@ def download_event_files(gear_options: dict, app_options: dict, gear_context: Ge
     counter = 0
 
     for f in acq.files:
-        if "_events" in f.name and app_options["events-suffix"] in f.name:
+        if "_events" in f.name:
+
+            #secondary check for correct suffix if provided...
+            if app_options["events-suffix"] and app_options["events-suffix"] not in f.name:
+                continue
+
             f.download(os.path.join(app_options["funcpath"], f.name))
             app_options["event-file"] = os.path.join(app_options["funcpath"], f.name)
             log.info("Using event file: %s", f.name)
@@ -435,12 +449,12 @@ def identify_feat_paths(gear_options: dict, app_options: dict):
         if app_options["confounds_default"]:
             # find confounds file...
             input_path = searchfiles(os.path.join(app_options["funcpath"], "*"+lookup_table["TASK"]+"*confounds_timeseries.tsv"))
-            gear_options["confounds_file"] = input_path[0]
+            app_options["confounds_file"] = input_path[0]
 
             if not input_path:
                 log.error("Unable to locate confounds file...exiting.")
             else:
-                log.info("Using confounds file: %s", gear_options["confounds_file"])
+                log.info("Using confounds file: %s", app_options["confounds_file"])
 
     # scan length
     cmd = "fslnvols " + app_options["func_file"]
@@ -531,15 +545,28 @@ def generate_design_file(gear_options: dict, app_options: dict):
 
         log.info("Located explanatory variable %s: %s", num, evname)
 
-        evfiles = searchfiles(os.path.join(app_options["event_dir"], "*-" + evname + ".txt"))
+        evfiles = searchfiles(os.path.join(app_options["event_dir"], "*-" + evname + ".txt"), exit_on_errors=False)
 
-        if len(evfiles) > 1 or evfiles[0] == '':
+        if len(evfiles) > 1:
             log.error("Problem locating event files programmatically... check event names and re-run.")
-        else:
-            log.info("Found match... EV %s: %s", evname, evfiles[0])
-            replace_line(design_file, r'set fmri\(custom' + num + '\)',
-                         'set fmri(custom' + num + ') "' + evfiles[0] + '"')
-            allfiles.append(evfiles[0])
+            continue
+
+        elif evfiles[0] == '' and not app_options["allow-missing-evs"]:
+            log.error("Problem locating event files programmatically... check event names and re-run.")
+            continue
+
+        elif evfiles[0] == '' and app_options["allow-missing-evs"]:
+            # allow missing ev to be included - create new empty regressor
+            cmd = """echo "0 0 0" > """+os.path.join(app_options["event_dir"], "zeros.txt")
+
+            if not os.path.exists(os.path.join(app_options["event_dir"], "zeros.txt")):
+                execute_shell(cmd, gear_options["dry-run"])
+            evfiles[0] = os.path.join(app_options["event_dir"], "zeros.txt")
+
+        log.info("Found match... EV %s: %s", evname, evfiles[0])
+        replace_line(design_file, r'set fmri\(custom' + num + '\)',
+                     'set fmri(custom' + num + ') "' + evfiles[0] + '"')
+        allfiles.append(evfiles[0])
 
     if allfiles:
         app_options["ev_files"] = allfiles
@@ -667,7 +694,7 @@ def execute_shell(cmd, dryrun=False, cwd=os.getcwd()):
         return returnCode
 
 
-def searchfiles(path, dryrun=False) -> list[str]:
+def searchfiles(path, dryrun=False, exit_on_errors=True) -> list[str]:
     cmd = "ls -d " + path
 
     log.debug("\n %s", cmd)
@@ -683,8 +710,11 @@ def searchfiles(path, dryrun=False) -> list[str]:
 
         files = stdout.strip("\n").split("\n")
 
-        if returnCode > 0:
+        if returnCode > 0 and exit_on_errors:
             log.error("Error. \n%s\n%s", stdout, stderr)
+
+        if returnCode > 0 and not exit_on_errors:
+            log.warning("Warning. \n%s\n%s", stdout, stderr)
 
         return files
 

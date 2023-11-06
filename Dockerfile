@@ -1,75 +1,9 @@
-# Creates docker container that runs HCP Pipeline algorithms
+# Creates docker container that runs flywheel feat gear
 # Maintainer: Amy Hegarty (amy.hegarty@colorado.edu)
 #
-
-FROM ubuntu:focal as base
+FROM amhe4269/fsl-base:6.0.4_inc0.1 as base
 #
 LABEL maintainer="Amy Hegarty <amy.hegarty@colorado.edu>"
-
-RUN apt-get update && apt-get install -y locales && rm -rf /var/lib/apt/lists/* \
-	&& localedef -i en_US -c -f UTF-8 -A /usr/share/locale/locale.alias en_US.UTF-8
-ENV LANG en_US.utf8
-
-ENV FSLDIR="/opt/fsl-6.0.4" \
-    PATH="/opt/fsl-6.0.4/bin:$PATH" \
-    FSLOUTPUTTYPE="NIFTI_GZ" \
-    FSLMULTIFILEQUIT="TRUE" \
-    FSLTCLSH="/opt/fsl-6.0.4/bin/fsltclsh" \
-    FSLWISH="/opt/fsl-6.0.4/bin/fslwish" \
-    FSLLOCKDIR="" \
-    FSLMACHINELIST="" \
-    FSLREMOTECALL="" \
-    FSLGECUDAQ="cuda.q"
-
-RUN apt-get update -qq \
-    && apt-get install -y -q --no-install-recommends \
-           bc \
-           curl \
-           ca-certificates\
-           dc \
-           file \
-           libfontconfig1 \
-           libfreetype6 \
-           libgl1-mesa-dev \
-           libgl1-mesa-dri \
-           libglu1-mesa-dev \
-           libgomp1 \
-           libice6 \
-           libxcursor1 \
-           libxft2 \
-           libxinerama1 \
-           libxrandr2 \
-           libxrender1 \
-           libxt6 \
-           sudo \
-           wget \
-           software-properties-common \
-           dirmngr \
-           ed \
-           less \
-           locales \
-           vim-tiny \
-           gpg-agent \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* \
-    && echo "Downloading FSL ..." \
-    && mkdir -p /opt/fsl-6.0.4 \
-    && curl -fsSL --retry 5 https://fsl.fmrib.ox.ac.uk/fsldownloads/fsl-6.0.4-centos6_64.tar.gz \
-    | tar -xz -C /opt/fsl-6.0.4 --strip-components 1
-
-
-RUN echo "Installing FSL conda environment ..." \
-    && python_install=/opt/fsl-6.0.4/etc/fslconf/fslpython_install.sh \
-    && sed -i 's/dl_cmd_opts="--fail"/dl_cmd_opts="--fail -L"/g' $python_install \
-    && bash $python_install -f /opt/fsl-6.0.4
-
-# install zip and unzip
-RUN apt-get update -qq \
-    && apt-get install -y -q --no-install-recommends \
-           zip \
-           unzip \
-           rsync \
-    && apt-get clean
 
 ######################################################
 # FLYWHEEL GEAR STUFF...
@@ -97,7 +31,7 @@ RUN apt-get update &&\
 # Install poetry based on their preferred method. pip install is finnicky.
 # Designate the install location, so that you can find it in Docker.
 ENV PYTHONUNBUFFERED=1 \
-    POETRY_VERSION=1.1.6 \
+    POETRY_VERSION=1.7.0 \
     # make poetry install to this location
     POETRY_HOME="/opt/poetry" \
     # do not ask any interactive questions

@@ -1,7 +1,7 @@
 [tool.poetry]
-name = "fw-gear-bids-qsiprep"
+name = "fw-gear-bids-feat"
 version = "1.0.3"
-description = "BIDS qsiprep 1.0.1_0.15.4  qsiprep configures pipelines for processing diffusion-weighted MRI (dMRI) data. The main features of this software are: A BIDS-app approach to preprocessing nearly all kinds of modern diffusion MRI data. Automatically generated preprocessing pipelines that correctly group, distortion correct, motion correct, denoise, co-register and resample your scans, producing visual reports and QC metrics. A system for running state-of-the-art reconstruction pipelines that include algorithms from Dipy, MRTrix, DSI Studio and others. A novel motion correction algorithm that works on DSI and random q-space sampling schemes"
+description = "FSL's FEAT (FMRI Expert Analysis Tool). As implemented in this Gear, FEAT first level analysis will act on any generic bids compliant pipeline outputs. Voxelwise activation analyses for a single (or multiple) task will be generated. A template FSF design file is required, and all processing steps indicated in the design file will be followed."
 authors = ["Flywheel <support@flywheel.io>"]
 readme = "README.md"
 license = "MIT"
@@ -16,10 +16,9 @@ classifiers = [
 
 [tool.poetry.dependencies]
 python = "^3.8.10"
-flywheel-gear-toolkit = "^0.6.6"
-flywheel-sdk = "^16.8.0"
+flywheel-gear-toolkit = "^0.6.14"
+flywheel-sdk = "^17.5.0"
 psutil = "^5.9.0"
-flywheel-bids = {git = "https://gitlab.com/flywheel-io/public/bids-client.git", rev = "master"}
 beautifulsoup4 = "^4.11.1"
 errorhandler = "^2.0.1"
 nibabel = "^5.0.0"

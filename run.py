@@ -6,27 +6,13 @@ import os
 import shutil
 import sys
 from pathlib import Path
-
-
-from flywheel_bids.results.zip_intermediate import (
-    zip_all_intermediate_output,
-    zip_intermediate_selected,
-)
-from flywheel_bids.utils.download_run_level import download_bids_for_runlevel
-from flywheel_bids.utils.run_level import get_analysis_run_level_and_hierarchy
 from flywheel_gear_toolkit import GearToolkitContext
-from flywheel_gear_toolkit.utils.file import sanitize_filename
-from flywheel_gear_toolkit.utils.metadata import Metadata
-from flywheel_gear_toolkit.utils.zip_tools import zip_output
 
 # This design with the main interfaces separated from a gear module (with main and
 # parser) allows the gear module to be publishable, so it can then be imported in
 # another project, which enables chaining multiple gears together.
 from fw_gear_bids_feat.main import prepare, run
 from fw_gear_bids_feat.parser import parse_config
-from utils.dry_run import pretend_it_ran
-from utils.zip_htmls import zip_htmls
-
 from utils.singularity import run_in_tmp_dir
 
 # The gear is split up into 2 main components. The run.py file which is executed

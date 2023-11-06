@@ -37,7 +37,7 @@
       "multirun": {
           "type": "boolean",
           "default": false,
-          "description": "select to concatenate all tasks in 'task-list' before running feat analysis. Otherwise each run will be run independently."
+          "description": "[depreciated] select to concatenate all tasks in 'task-list' before running feat analysis. Otherwise each run will be run independently."
       },
       "evformat": {
         "default": "BIDS-Formatted",
@@ -47,6 +47,20 @@
           "BIDS-Formatted",
           "FSL-3 Column Format",
           "FSL-1 Entry Per Volume"
+        ]
+      },
+      "allow-missing-evs": {
+          "type": "boolean",
+          "default": false,
+          "description": "Set to true to replace missing evs from template fsf with empty (zeros) regressor instead of exiting with error. Only select this option if you are confident the naming convention for events matches the fsf template."
+      },
+      "run-level": {
+        "default": "First Level Analysis",
+        "description": "Select appropriate run level (First Level Analysis | Higher Level Analysis). Higher level analysis skips certain design criteria specific for first level analysis setup.",
+        "type": "string",
+        "enum": [
+          "First Level Analysis",
+          "Higher Level Analysis"
         ]
       },
       "gear-log-level": {
@@ -129,7 +143,7 @@
         },
         "gear-builder": {
             "category": "analysis",
-            "image": "amhe4269/bids-feat:6.0.4_inc0.3"
+            "image": "amhe4269/bids-feat:6.0.4_inc0.3rc0"
         },
         "license": "Apache-2.0"
     },
@@ -194,5 +208,5 @@
     "name": "bids-feat",
     "source": "https://github.com/intermountainneuroimaging/bids-feat",
     "url": "http://fsl.fmrib.ox.ac.uk/fsl/fslwiki/FEAT",
-    "version": "6.0.4_inc0.3"
+    "version": "6.0.4_inc0.3rc0"
 }
