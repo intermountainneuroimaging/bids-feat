@@ -44,7 +44,7 @@ def find_matching_acq(bids_name, context):
     # assumes reproin naming scheme for acquisitions!
     for acq in session.acquisitions.iter_find():
         full_acq = fw.get_acquisition(acq.id)
-        if ("func-bold" in acq.label) and (bids_name in acq.label) and ("sbref" not in acq.label.lower()):
+        if ("func-bold" in acq.label) and (bids_name in acq.label) and ("sbref" not in acq.label.lower()) and ("ignore-BIDS" not in acq.label):
             for f in full_acq.files:
                 if bids_name in f.info.get("BIDS").get("Filename") and "nii" in f.name:
                     return full_acq, f

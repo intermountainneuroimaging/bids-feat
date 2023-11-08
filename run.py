@@ -101,14 +101,27 @@ if __name__ == "__main__":  # pragma: no cover
     # Get access to gear config, inputs, and sdk client if enabled.
     # os.environ["SINGULARITY_NAME"] = "test"
     with GearToolkitContext() as gear_context:
+        # Initialize logging, set logging level based on `debug` configuration
+        # key in gear config.
+        gear_context.init_logging()
+        log.parent.handlers[0].setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
+
+        if gear_context.config["gear-log-level"] =="DEBUG":
+            log.setLevel(logging.DEBUG)
+
+        if gear_context.config["gear-log-level"] =="INFO":
+            log.setLevel(logging.INFO)
+
+        if gear_context.config["gear-log-level"] == "WARNING":
+            log.setLevel(logging.WARNING)
+
+        if gear_context.config["gear-log-level"] =="ERROR":
+            log.setLevel(logging.ERROR)
+
         scratch_dir = run_in_tmp_dir(gear_context.config["gear-writable-dir"])
     # Has to be instantiated twice here, since parent directories might have
     # changed
     with GearToolkitContext() as gear_context:
-
-        # # Initialize logging, set logging level based on `debug` configuration
-        # # key in gear config.
-        # gear_context.init_logging()
 
         # Pass the gear context into main function defined above.
         return_code = main(gear_context)

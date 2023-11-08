@@ -4,7 +4,7 @@ from zipfile import ZipFile
 from flywheel_gear_toolkit import GearToolkitContext
 import os
 import logging
-from fw_gear_bids_feat.main import execute_shell
+from fw_gear_bids_feat.support_functions import execute_shell
 import errorhandler
 
 log = logging.getLogger(__name__)
@@ -136,7 +136,7 @@ def unzip_inputs(gear_options, zip_filename):
     outpath=[]
     # use linux "unzip" methods in shell in case symbolic links exist
     log.info("Unzipping file, %s", zip_filename)
-    cmd = "unzip -o " + zip_filename + " -d " + str(gear_options["work-dir"])
+    cmd = "unzip -qq -o " + zip_filename + " -d " + str(gear_options["work-dir"])
     execute_shell(cmd, cwd=gear_options["work-dir"])
 
     # if unzipped directory is a destination id - move all outputs one level up

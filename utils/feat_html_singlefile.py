@@ -8,8 +8,7 @@ import argparse
 from functools import partial
 
 import logging
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(levelname)s %(message)s')
-log = logging.getLogger('main')
+log = logging.getLogger(__name__)
 
 
 def parser(context):
@@ -90,11 +89,14 @@ def update_image_refs(obj,parentPath,htmlpath):
                     path=img["src"]
                 else:
                     path=os.path.join(htmlpath,img["src"])
-                    
-                with open(path, "rb") as image_file:
-                    encoded_string = base64.b64encode(image_file.read())
-                
-                img['src'] = "data:image/png;base64, " + encoded_string.decode('utf-8')
+                try:
+                    with open(path, "rb") as image_file:
+                        encoded_string = base64.b64encode(image_file.read())
+
+                    img['src'] = "data:image/png;base64, " + encoded_string.decode('utf-8')
+                except OSError as e:
+                    log.warning("File not found: %s", path)
+
             
 
 def cleanup_image_refs(html):
@@ -106,8 +108,11 @@ def cleanup_image_refs(html):
 
             link['src'] = "data:image/png;base64, " + encoded_string.decode('utf-8')
         else:
-            with open(link['src'].replace("file:",""), "rb") as image_file:
-                encoded_string = base64.b64encode(image_file.read())
+            try:
+                with open(link['src'].replace("file:",""), "rb") as image_file:
+                    encoded_string = base64.b64encode(image_file.read())
+            except OSError as e:
+                log.warning("file not found: %s", link['src'].replace("file:",""))
 
             link['src'] = "data:image/png;base64, " + encoded_string.decode('utf-8')
             
@@ -182,7 +187,7 @@ def main(featfile):
             log.info(f)
             allfiles.extend(df['files'])
             allrefs.extend(df['refs'])
-        
+
         update_image_refs(ihtml,featfile.parent,htmlpath.parent)
         
         # add inital report "table" to base, then look through all subsequent files
