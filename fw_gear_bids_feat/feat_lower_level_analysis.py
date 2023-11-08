@@ -539,6 +539,8 @@ def generate_design_file(gear_options: dict, app_options: dict):
             if not os.path.exists(os.path.join(app_options["event_dir"], "zeros.txt")):
                 execute_shell(cmd, gear_options["dry-run"])
             evfiles[0] = os.path.join(app_options["event_dir"], "zeros.txt")
+            replace_line(design_file, r'set fmri\(shape' + num + '\)',
+                         'set fmri(shape' + num + ') 10')
 
         log.info("Found match... EV %s: %s", evname, evfiles[0])
         replace_line(design_file, r'set fmri\(custom' + num + '\)',
