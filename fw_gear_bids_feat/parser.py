@@ -148,8 +148,16 @@ def unzip_inputs(gear_options, zip_filename):
 
     if len(top[0]) == 24:
         # directory starts with flywheel destination id - obscure this for now...
-        cmd = "mv "+top[0]+'/* . ; rm -R '+top[0]
-        execute_shell(cmd, cwd=gear_options["work-dir"])
+
+        cmd = "mv "+top[0]+'/* . '
+        rc = execute_shell(cmd, cwd=gear_options["work-dir"])
+        if rc > 0:
+            cmd = "cp -R " + top[0] + '/* . '
+            execute_shell(cmd, cwd=gear_options["work-dir"])
+
+        cmd = 'rm -R ' + top[0]
+        rc = execute_shell(cmd, cwd=gear_options["work-dir"])
+
         for i in set(top1):
             outpath.append(os.path.join(gear_options["work-dir"], i))
 

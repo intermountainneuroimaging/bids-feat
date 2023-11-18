@@ -212,6 +212,10 @@ def generate_confounds_file(gear_options: dict, app_options: dict, gear_context:
         tmpdf = pd.DataFrame(arr)
 
         all_confounds_df = pd.concat([all_confounds_df, tmpdf], axis=1)
+        numrange = [*range(0, len(all_confounds_df.columns), 1)]
+        cols = ["dummy_tr_" + str(s).zfill(2) for s in numrange]
+
+        all_confounds_df.columns = cols
 
     if app_options['confound-list']:
         # load confounds file - the pull relevant columns

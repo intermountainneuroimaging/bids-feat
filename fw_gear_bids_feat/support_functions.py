@@ -58,8 +58,9 @@ def execute_shell(cmd, dryrun=False, cwd=os.getcwd()):
         log.debug("\n %s", stdout)
         log.debug("\n %s", stderr)
 
-        if returnCode > 0:
-            log.error("Error. \n%s\n%s", stdout, stderr)
+        if stderr:
+            log.warning("Error. \n%s\n%s", stdout, stderr)
+            returnCode = 1
         return returnCode
 
 
