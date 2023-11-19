@@ -69,7 +69,7 @@ def parse_config(
         app_options["additional_input"] = False
 
     # confounds file input
-    if gear_context.get_input_path("additional-input-one"):
+    if gear_context.get_input_path("confounds-file"):
         app_options["confounds_default"] = False
         app_options["confounds_file"] = gear_context.get_input_path("confounds-file")
     else:
