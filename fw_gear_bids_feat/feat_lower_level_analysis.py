@@ -11,12 +11,14 @@ import re
 import shutil
 from zipfile import ZIP_DEFLATED, ZipFile
 import errorhandler
+import nibabel as nb
 from flywheel_gear_toolkit import GearToolkitContext
 
 from utils.command_line import exec_command
 from utils.feat_html_singlefile import main as flathtml
 from fw_gear_bids_feat import metadata
-from fw_gear_bids_feat.support_functions import generate_command, execute_shell, searchfiles, sed_inplace, locate_by_pattern, replace_line, fetch_dummy_volumes, apply_lookup
+from fw_gear_bids_feat.support_functions import generate_command, execute_shell, searchfiles, sed_inplace, \
+    locate_by_pattern, replace_line, fetch_dummy_volumes, apply_lookup, _normalize_volumes, _remove_volumes
 
 log = logging.getLogger(__name__)
 
@@ -48,38 +50,63 @@ def run(gear_options: dict, app_options: dict, gear_context: GearToolkitContext)
     if not type(app_options["task-list"]) == list:
         app_options["task-list"] = [app_options["task-list"]]
 
-    for task in app_options["task-list"]:
+    # check if run configuration is single run or multi run mode (concatenated)
+    if app_options["multirun"] == False:
 
-        app_options["task"] = task
+        for task in app_options["task-list"]:
 
-        # generate filepaths for feat run (need this for other setup steps)
-        identify_feat_paths(gear_options, app_options)
+            app_options["task"] = task
 
-        if error_handler.fired:
-            log.critical('Failure: exiting with code 1 due to logged errors')
-            run_error = 1
-            return run_error
+            # generate filepaths for feat run (need this for other setup steps)
+            identify_feat_paths(gear_options, app_options)
 
-        # add all confounds from selected list to feat confounds (for each task in list)
-        generate_confounds_file(gear_options, app_options, gear_context)
+            if error_handler.fired:
+                log.critical('Failure: exiting with code 1 due to logged errors')
+                run_error = 1
+                return run_error
 
-        df = pd.DataFrame({"func_file": app_options["func_file"], "funcpath": app_options["funcpath"],
-                           "highres_file": app_options["highres_file"],
-                           "feat_confounds_file": app_options["feat_confounds_file"],
-                           "trs": app_options["trs"], "nvols": app_options["nvols"],
-                           "AcqDummyVolumes": app_options["AcqDummyVolumes"]}, index=[0])
+            # add all confounds from selected list to feat confounds (for each task in list)
+            generate_confounds_file(gear_options, app_options, gear_context)
 
-        if "summary_frame" not in app_options:
-            app_options["summary_frame"] = df
-        else:
-            app_options["summary_frame"] = pd.concat([app_options["summary_frame"], df], ignore_index=True)
+            df = pd.DataFrame({"func_file": app_options["func_file"], "funcpath": app_options["funcpath"],
+                               "highres_file": app_options["highres_file"],
+                               "feat_confounds_file": app_options["feat_confounds_file"],
+                               "trs": app_options["trs"], "nvols": app_options["nvols"],
+                               "AcqDummyVolumes": app_options["AcqDummyVolumes"]}, index=[0])
 
-        # prepare events files (for each task in list) -- only download acq events for non multirun config
-        if not app_options["events-in-inputs"]:
-            download_event_files(gear_options, app_options, gear_context)
-        generate_ev_files(gear_options, app_options)
+            if "summary_frame" not in app_options:
+                app_options["summary_frame"] = df
+            else:
+                app_options["summary_frame"] = pd.concat([app_options["summary_frame"], df], ignore_index=True)
+
+            # prepare events files (for each task in list) -- only download acq events for non multirun config
+            if not app_options["events-in-inputs"]:
+                download_event_files(gear_options, app_options, gear_context)
+            generate_ev_files(gear_options, app_options)
+
+            # prepare fsf design file
+            generate_design_file(gear_options, app_options)
+
+            # generate command - "stage" commands for final run
+            commands.append(generate_command(gear_options, app_options))
+
+            if error_handler.fired:
+                log.critical('Failure: exiting with code 1 due to logged errors')
+                run_error = 1
+                return run_error
+    else:
+        # using concatenated task workflow
+        # 1. concatenate all func files
+        app_options["concat-file"] = concat_fmri(gear_options, app_options, gear_context)
+
+        # 2. concatenate all confound files
+        concat_confounds(gear_options, app_options, gear_context)
+
+        # 3. concatenate all event files
+        concat_events(gear_options, app_options, gear_context)
 
         # prepare fsf design file
+        app_options["func_file"] = app_options["concat-file"]
         generate_design_file(gear_options, app_options)
 
         # generate command - "stage" commands for final run
@@ -484,10 +511,10 @@ def generate_design_file(gear_options: dict, app_options: dict):
     replace_line(design_file, r'set feat_files\(1\)', 'set feat_files(1) "' + app_options["func_file"] + '"')
 
     # 3. total func length
-    replace_line(design_file, r'set fmri\(npts\)', 'set fmri(npts) ' + app_options["nvols"])
+    replace_line(design_file, r'set fmri\(npts\)', 'set fmri(npts) ' + str(app_options["nvols"]))
 
     # 3a. repetition time (TR)
-    replace_line(design_file, r'set fmri\(tr\)', 'set fmri(tr) ' + app_options["trs"])
+    replace_line(design_file, r'set fmri\(tr\)', 'set fmri(tr) ' + str(app_options["trs"]))
 
     # TODO check registration consistency
 
@@ -555,5 +582,265 @@ def generate_design_file(gear_options: dict, app_options: dict):
         app_options["ev_files"] = allfiles
 
     return app_options
+
+
+# ---------------------------------- #
+# -- Concatenated Input Functions ---#
+# ---------------------------------- #
+
+def find_feat_file(gear_options: dict, app_options: dict, input_type = "fmri"):
+    """
+    Identify feat file from placeholders in the fsf design file. Use with filemapper to point to each filepath.
+    Args:
+        gear_options (dict): options for the gear, from config.json
+        app_options (dict): options for the app, from config.json
+
+    Returns:
+        app_options (dict): updated options for the app, from config.json
+    """
+    app_options["func_file"] = None
+    app_options["confounds_file"] = None
+    app_options["highres_file"] = None
+
+    design_file = gear_options["FSF_TEMPLATE"]
+
+    # check provided template matches the analysis type set in the configs
+    analysis_level = locate_by_pattern(design_file, r'set fmri\(level\) (.*)')
+
+    if analysis_level[0] != "1":
+        log.error("Provided FSF template does not match analysis level from gear configuration. Exiting Now")
+        return
+
+    # apply filemapper to each file pattern and store
+    if os.path.isdir(os.path.join(gear_options["work-dir"], "fmriprep")):
+        pipeline = "fmriprep"
+    elif os.path.isdir(os.path.join(gear_options["work-dir"], "bids-hcp")):
+        pipeline = "bids-hcp"
+    elif len(os.walk(gear_options["work-dir"]).next()[1]) == 1:
+        pipeline = os.walk(gear_options["work-dir"]).next()[1]
+    else:
+        log.error("Unable to interpret pipeline for analysis. Contact gear maintainer for more details.")
+    app_options["pipeline"] = pipeline
+
+    lookup_table = {"WORKDIR": str(gear_options["work-dir"]), "PIPELINE": pipeline, "SUBJECT": app_options["sid"],
+                    "SESSION": app_options["sesid"], "TASK": app_options["task"]}
+
+    # special exception - fmriprep produces non-zeropaded run numbers - fix this only for applying lookup table here
+    if pipeline == "fmriprep":
+        # zero padding only relevent for versions less than v23
+        if "preproc_gear" in gear_options:
+            # check the version
+            version = gear_options["preproc_gear"]["gear_info"]["version"]
+            if version.split("_")[1] < "23.0.0":
+                task = app_options["task"].split("_")
+                for idx, prt in enumerate(task):
+                    if "run" in task[idx]:
+                        task[idx] = task[idx].replace("-0", "-")
+                task = "_".join(task)
+                lookup_table["TASK"] = task
+
+    func_file_name = locate_by_pattern(design_file, r'set feat_files\(1\) "(.*)"')
+    app_options["func_file"] = apply_lookup(func_file_name[0], lookup_table)
+    app_options["funcpath"] = os.path.dirname(app_options["func_file"])
+
+    if not searchfiles(app_options["func_file"]):
+        log.error("Unable to locate functional file...exiting.")
+
+    app_options["include_confounds"] = False
+    # check if confounds file is defined in model
+    confound_yn = locate_by_pattern(design_file, r'set fmri\(confoundevs\) (.*)')
+    if int(confound_yn[0]):
+        app_options["include_confounds"] = True
+
+        # select confound file location
+        if app_options["confounds_default"]:
+            # find confounds file...
+            input_path = searchfiles(
+                os.path.join(app_options["funcpath"], "*" + lookup_table["TASK"] + "*confounds_timeseries.tsv"))
+            app_options["confounds_file"] = input_path[0]
+
+            if not input_path:
+                log.error("Unable to locate confounds file...exiting.")
+
+
+def concat_confounds(gear_options: dict, app_options: dict, gear_context: GearToolkitContext):
+    """
+    Build a concatenated confounds file - look for confound path then concatenate together
+    Args:
+        gear_options (dict): options for the gear, from config.json
+        app_options (dict): options for the app, from config.json
+
+    Returns:
+        app_options (dict): updated options for the app, from config.json
+    """
+
+    log.info("Building confounds file...")
+
+    all_confounds_df = pd.DataFrame()
+
+    for idx, task in enumerate(app_options["task-list"]):
+        app_options["task"] = task
+
+        # locate the feat files for each task...
+        find_feat_file(gear_options, app_options)
+        log.info("Using confounds file: %s", app_options["confounds_file"])
+
+        # identify dummy volume count
+        nvolumes = fetch_dummy_volumes(app_options["task"], gear_context)
+
+        data = pd.DataFrame()
+
+        # load confounds file - the pull relevant columns
+        if app_options["confounds_file"]:
+            log.info("Using confounds spreadsheet: %s", str(app_options["confounds_file"]))
+            data = pd.read_csv(app_options["confounds_file"], sep='\t')
+
+        # get run regressor
+        nvols = nb.load(app_options["func_file"]).shape[3]
+        arr = np.zeros([nvols, len(app_options["task-list"])])
+        arr[:,idx] = 1
+        numrange = [*range(0, len(app_options["task-list"]), 1)]
+        cols = ["run_" + str(s).zfill(2) for s in numrange]
+        df1 = pd.DataFrame(arr, columns=cols)
+        data = pd.concat([data, df1], axis=1)
+
+        if app_options['confound-list']:
+
+            confounds_df = pd.DataFrame()
+
+            # pull relevant columns for feat
+            colnames = app_options['confound-list'].replace(" ", "").split(",")
+            colnames.extend(cols)
+
+            for cc in colnames:
+
+                # look for exact matches...
+                if cc in data.columns:
+                    confounds_df = pd.concat([confounds_df, data[cc]], axis=1)
+
+                # handle regular expression entries
+                elif any(special_char in cc for special_char in ["*", "^", "$", "+"]):
+                    pattern = re.compile(cc)
+                    for regex_col in [s for s in data.columns if bool(re.search(pattern, s))]:
+                        confounds_df = pd.concat([confounds_df, data[regex_col]], axis=1)
+        else:
+            confounds_df = data
+
+        # trim initial rows and concatenate across runs
+        all_confounds_df = pd.concat([all_confounds_df, confounds_df.iloc[nvolumes:]], axis = 0)
+
+    # assign final confounds file for task
+    if not all_confounds_df.empty:
+        log.info("Including confounds: %s", ", ".join(all_confounds_df.columns))
+    all_confounds_df.to_csv(
+        os.path.join(app_options["funcpath"], 'feat-confounds_concat.txt'),
+        header=False, index=False,
+        sep=" ", na_rep=0)
+    app_options["feat_confounds_file"] = os.path.join(app_options["funcpath"], 'feat-confounds_concat.txt')
+
+    return
+
+
+def concat_fmri(gear_options: dict, app_options: dict, gear_context: GearToolkitContext):
+    """
+    Build a concatenated fmri file. Use task level preprocessed input files
+    Args:
+        gear_options (dict): options for the gear, from config.json
+        app_options (dict): options for the app, from config.json
+
+    Returns:
+        app_options (dict): updated options for the app, from config.json
+    """
+
+    log.info("Building fmri file...")
+
+    cmd = "fslmerge -t concat_fmri"
+
+    for task in app_options["task-list"]:
+        app_options["task"] = task
+
+        # locate the feat files for each task...
+        find_feat_file(gear_options, app_options)
+
+        log.info("Using functional file: %s", app_options["func_file"])
+
+        # identify dummy volume count
+        nvolumes = fetch_dummy_volumes(app_options["task"], gear_context)
+
+        # trim each feat file
+        bold_file = app_options["func_file"]
+        bold_file_new = _remove_volumes(bold_file, nvolumes)
+
+        # normalize data
+        bold_file_final = _normalize_volumes(bold_file_new)
+
+        cmd = cmd + " " + bold_file_final
+
+    # run concatenate command
+    # execute_shell(cmd, dryrun=False, cwd=app_options["work-dir"])
+
+    # set new total fmri dims
+    app_options["func_file"] = os.path.join(app_options["work-dir"], "concat_fmri.nii.gz")
+    app_options["nvols"] = nb.load(app_options["func_file"]).shape[3]
+    app_options["trs"] = nb.load(app_options["func_file"]).header["pixdim"][4]
+
+    return os.path.join(app_options["work-dir"], "concat_fmri.nii.gz")
+
+
+def concat_events(gear_options: dict, app_options: dict, gear_context: GearToolkitContext):
+    """
+    Build a concatenated events file. Use task level preprocessed input files
+    Args:
+        gear_options (dict): options for the gear, from config.json
+        app_options (dict): options for the app, from config.json
+
+    Returns:
+        app_options (dict): updated options for the app, from config.json
+    """
+
+    log.info("Building events files...")
+
+    starttime = 0
+
+    events = pd.DataFrame()
+    for task in app_options["task-list"]:
+        app_options["task"] = task
+
+        # locate the feat files for each task...
+        find_feat_file(gear_options, app_options)
+
+        # identify starting tr and shape
+        nvols = nb.load(app_options["func_file"]).shape[3]
+        tr = nb.load(app_options["func_file"]).header["pixdim"][4]
+
+        # identify dummy volume count
+        dummyvols = fetch_dummy_volumes(app_options["task"], gear_context)
+
+        # prepare events files (for each task in list) -- only download acq events for non multirun config
+        if not app_options["events-in-inputs"]:
+            download_event_files(gear_options, app_options, gear_context)
+
+        df = pd.read_csv(app_options["event-file"], sep="\t")
+
+        # shift timing
+        offset = starttime - dummyvols * tr
+        totaltime = nvols * tr - dummyvols * tr
+        df["onset"] = df["onset"] + offset
+
+        # next iteration startime
+        starttime = starttime + totaltime
+        events = pd.concat([events, df], axis=0)
+
+    events = events.sort_values(by=['onset'])
+
+    app_options["event-file"] = os.path.join(app_options["funcpath"], "concat-events.tsv")
+
+    events.to_csv(app_options["event-file"], sep='\t', header=True, index=False)
+    app_options["task"] = "concat"
+
+    # generate all tasks after concatenating - easier than doing it for each text file separately
+    generate_ev_files(gear_options, app_options)
+
+    return
 
 

@@ -8,7 +8,14 @@ import shutil
 import tempfile
 import errorhandler
 from typing import List
+import nibabel as nb
+import numpy as np
+from nipype.utils.filemanip import fname_presuffix
 from fw_gear_bids_feat import metadata
+
+from nipype.interfaces.fsl.maths import MeanImage, DilateImage, MathsCommand
+from nipype.interfaces.fsl import BET
+from nipype.interfaces.fsl.utils import ImageStats
 
 log = logging.getLogger(__name__)
 
@@ -192,3 +199,84 @@ def apply_lookup(text, lookup_table):
         for lookup in lookup_table:
             text = text.replace('{' + lookup + '}', lookup_table[lookup])
     return text
+
+
+def _remove_volumes(bold_file,n_volumes):
+    if n_volumes == 0:
+        return bold_file
+
+    out = fname_presuffix(bold_file, suffix='_cut')
+    nb.load(bold_file).slicer[..., n_volumes:].to_filename(out)
+    return out
+
+
+def _remove_timepoints(motion_file,n_volumes):
+    arr = np.loadtxt(motion_file, ndmin=2)
+    arr = arr[n_volumes:,...]
+
+    filename, file_extension = os.path.splitext(motion_file)
+    motion_file_new = motion_file.replace(file_extension,"_cut"+file_extension)
+    np.savetxt(motion_file_new, arr, delimiter='\t')
+    return motion_file_new
+
+
+def _add_volumes(bold_file, bold_cut_file, n_volumes):
+    """prepend n_volumes from bold_file onto bold_cut_file"""
+    bold_img = nb.load(bold_file)
+    bold_data = bold_img.get_fdata()
+    bold_cut_img = nb.load(bold_cut_file)
+    bold_cut_data = bold_cut_img.get_fdata()
+
+    # assign everything from n_volumes foward to bold_cut_data
+    bold_data[..., n_volumes:] = bold_cut_data
+
+    out = bold_cut_file.replace("_cut","")
+    bold_img.__class__(bold_data, bold_img.affine, bold_img.header).to_filename(out)
+    log.info("Trimmed nifti file saved: %s", out)
+    return out
+
+
+def _normalize_volumes(bold_file):
+    out = fname_presuffix(bold_file, suffix='_psc')
+    # with tempfile.TemporaryDirectory(dir=os.getcwd()) as tmpdir:
+    #     tmean = MeanImage()
+    #     tmean.inputs.in_file = bold_file
+    #     tmean.inputs.out_file = op.join(tmpdir, "mean_func")
+    #     log.info(tmean.cmdline)
+    #     res = tmean.run()
+    #
+    #     bet = BET()
+    #     bet.inputs.in_file = op.join(tmpdir, "mean_func.nii.gz")
+    #     bet.inputs.frac = 0.3
+    #     bet.inputs.out_file = op.join(tmpdir, "mask")
+    #     bet.inputs.no_output = True
+    #     bet.inputs.mask = True
+    #     log.info(bet.cmdline)
+    #     res = bet.run()
+    #
+    #     fslstats = ImageStats()
+    #     fslstats.inputs.in_file = bold_file
+    #     fslstats.inputs.mask_file = op.join(tmpdir, "mask_mask.nii.gz")
+    #     fslstats.inputs.op_string = "-p 50"
+    #     log.info(fslstats.cmdline)
+    #     res = fslstats.run()
+    #
+    #     value = 10000 / res.outputs.out_stat
+    #
+    #     dil = DilateImage()
+    #     dil.inputs.in_file = op.join(tmpdir, "mask_mask.nii.gz")
+    #     dil.inputs.operation = "max"
+    #     dil.inputs.out_file = op.join(tmpdir, "mask.nii.gz")
+    #     log.info(dil.cmdline)
+    #     res = dil.run()
+    #
+    #     maths = MathsCommand()
+    #     maths.inputs.in_file = bold_file
+    #     maths.inputs.args = "-mul "+str(value)
+    #     maths.inputs.out_file = out
+    #     log.info(maths.cmdline)
+    #     res = maths.run()
+    #
+    #     log.info("Normalized by global median nifti file saved: %s", out)
+
+    return out

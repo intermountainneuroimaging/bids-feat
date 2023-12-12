@@ -37,7 +37,7 @@
       "multirun": {
           "type": "boolean",
           "default": false,
-          "description": "[depreciated] select to concatenate all tasks in 'task-list' before running feat analysis. Otherwise each run will be run independently."
+          "description": "select to concatenate all tasks in 'task-list' before running feat analysis. Otherwise each run will be run independently."
       },
       "evformat": {
         "default": "BIDS-Formatted",
