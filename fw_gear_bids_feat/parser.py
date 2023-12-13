@@ -102,7 +102,7 @@ def parse_config(
     }
 
     # unzip input files
-    # unzip_inputs(gear_options, gear_options["preproc_zipfile"])
+    unzip_inputs(gear_options, gear_options["preproc_zipfile"])
 
     if app_options["additional_input"]:
         unzip_inputs(gear_options, gear_options["additional_input_zip"])
@@ -162,7 +162,7 @@ def unzip_inputs(gear_options, zip_filename):
             outpath.append(os.path.join(gear_options["work-dir"], i))
 
         # get previous gear info
-        gear_options["preproc_gear"] = gear_options["client"].get(top[0])
+        gear_options["preproc_gear"] = gear_options["client"].get_analysis(top[0])
     else:
         outpath = os.path.join(gear_options["work-dir"], top[0])
 

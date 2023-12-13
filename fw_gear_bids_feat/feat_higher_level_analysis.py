@@ -4,6 +4,8 @@ import logging
 import os
 import os.path as op
 from pathlib import Path
+import pandas as pd
+import numpy as np
 import shutil
 from zipfile import ZIP_DEFLATED, ZipFile
 import errorhandler
@@ -48,8 +50,15 @@ def run(gear_options: dict, app_options: dict, gear_context: GearToolkitContext)
     if (app_options["lower_level_registration"] == "none-MNI152NLin6Asym") or (app_options["lower_level_registration"] == "none-func"):
         add_dummy_reg(gear_options, app_options)
 
-    # generate command - "stage" commands for final run
-    commands.append(generate_command(gear_options, app_options))
+    # if missing evs were allowed in first stage - check for excluded copes
+    if gear_options['preproc_gear'].job.config["config"]['allow-missing-evs']:
+        single_cope_design_files = setup_higher_level_analysis(app_options["design_file"])
+        for design_file in single_cope_design_files:
+            app_options["design_file"] = design_file
+            # generate command - "stage" commands for final run
+            commands.append(generate_command(gear_options, app_options))
+    else:
+        commands.append(generate_command(gear_options, app_options))
 
     if error_handler.fired:
         log.critical('Failure: exiting with code 1 due to logged errors')
@@ -118,6 +127,85 @@ def run(gear_options: dict, app_options: dict, gear_context: GearToolkitContext)
         shutil.copy(app_options["design_file"], os.path.join(gear_options["output-dir"], "design.fsf"))
 
     return run_error
+
+
+def setup_higher_level_analysis(design_file):
+    """
+    Function checks all lower level directories for missing events, identifies copes that can be used in higher level
+    analysis and creates single cope .gfeat design files with lower level models containing relevant copes
+    Args:
+        design_file: design file (should contain all relevant paths)
+
+    Returns: list of single cope design files - use for analysis
+
+    """
+    # pull all lower level cope directories being used for analysis
+    lower_feat = pd.DataFrame(locate_by_pattern(design_file, r'set feat_files\((\d+)\) "(.*)"'),
+                              columns=["num", "path"])
+    problem_contrasts = []
+    for idx, row in lower_feat.iterrows():
+        problem_contrasts.append(get_problem_contrasts(row["path"]))
+        lower_level_contrasts = get_lower_contrasts(row["path"])
+
+    # after putting all relevant input paths... make sure analysis is single cope
+    lower_cope_key = pd.DataFrame(locate_by_pattern(design_file, r'set fmri\(copeinput.(\d+)\) (.*)'),
+                                  columns=["num", "value"])
+
+    # list of design files
+    out_design_files = []
+
+    for idx, row in lower_cope_key.iterrows():
+        # set all lower level copes to 0
+        lower_cope_key["value"] = 0
+        # next set lower level cope of interest to 1
+        lower_cope_key.loc["value", idx] = 1
+        # pull cope name for labels
+        conname = lower_level_contrasts["name"][idx]
+        output_name_onecope = locate_by_pattern(design_file, r'set fmri\(outputdir\) "(.*)"')[0] + "." + str(
+            idx + 1).zfill(2) + "." + conname
+        design_file_onecope = design_file.replace('.fsf', "." + str(idx + 1).zfill(2) + "." + conname + ".fsf")
+
+        # assign new values...
+        shutil.copy(design_file, design_file_onecope)
+
+        replace_line(design_file_onecope, r'set fmri\(outputdir\)',
+                     'set fmri(outputdir) "' + output_name_onecope + '"\n')
+
+        for i, r in lower_cope_key.iterrows():
+            if idx == i:
+                replace_line(design_file_onecope, r'set fmri\(copeinput.' + str(r["num"]) + '\)',
+                             'set fmri(copeinput.' + str(r["num"]) + ') 1\n')
+            else:
+                replace_line(design_file_onecope, r'set fmri\(copeinput.' + str(r["num"]) + '\)',
+                             'set fmri(copeinput.' + str(r["num"]) + ') 0\n')
+            # print(r'set fmri\(copeinput.' + str(r["num"]) + '\)')
+        # pull all the ev assignments...
+        higher_ev_key = pd.DataFrame(locate_by_pattern(design_file, r'set fmri\(evg(\d+).(\d+)\) (.*)'),
+                                     columns=["input", "ev", "value"])
+
+        # set zero for all problem contrasts
+        for i, r in lower_feat.iterrows():
+            # get probblem contransts for input
+            itr_prob_contrasts = problem_contrasts[i]
+            # print(itr_prob_contrasts)
+            if conname in itr_prob_contrasts:
+                higher_ev_key["value"][higher_ev_key["input"] == r[0]] = 0
+
+        # check there is at least one lower level with results... if no valid lower level results - do not run higher level analysis
+        if all(higher_ev_key["value"] == 0):
+            print(conname + " cannot be used in secondary analysis")
+            os.remove(design_file_onecope)
+            continue
+
+        # apply value changes based on problem contrasts in lower level
+        for i, r in higher_ev_key.iterrows():
+            replace_line(design_file_onecope, r'set fmri\(evg' + str(r["input"]) + "." + str(r["ev"]) + '\)',
+                         'set fmri(evg' + str(r["input"]) + "." + str(r["ev"]) + ') ' + str(r["value"]) + '\n')
+
+        out_design_files.append(design_file_onecope)
+
+    return out_design_files
+
 
 def identify_feat_paths(gear_options: dict, app_options: dict):
     """
@@ -293,4 +381,76 @@ def add_dummy_reg(gear_options: dict, app_options: dict):
 
             cmd = "/bin/rm -f sl?.png example_func2standard2.png"
             execute_shell(cmd, dryrun=gear_options["dry-run"], cwd=op.join(p, "reg"))
+
+
+def get_problem_contrasts(lower_feat_dir):
+    """
+    Return list of contrasts that were computed using zero frame EVs these should not be included in higher level analyses.
+    Args:
+        lower_feat_dir: path to .feat directory
+
+    Returns: list of problem copes
+
+    """
+    design_file = os.path.join(lower_feat_dir, "design.fsf")
+    conmat = os.path.join(lower_feat_dir, "design.con")
+    frfmat = os.path.join(lower_feat_dir, "design.frf")
+
+    # locate all evtitle calls in template
+    ev_key = locate_by_pattern(design_file, r'set fmri\(evtitle(\d+)\) "(.*)"')
+    ev_files = locate_by_pattern(design_file, r'set fmri\(custom(\d+)\) "(.*)"')
+    ev_shape = locate_by_pattern(design_file, r'set fmri\(shape(\d+)\) (.*)')
+
+    # check for empty evs
+    empty_ev_check_1 = [k[1] == '10' for k in ev_shape]
+    empty_ev_check_2 = ["zeros.txt" == os.path.basename(k[1]) for k in ev_files]
+
+    if not empty_ev_check_1 == empty_ev_check_2:
+        # log.error("Checks for lower level missing evs not sucessful. Not sure how to proceed. Exiting")
+        print("Checks for lower level missing evs not sucessful. Not sure how to proceed. Exiting")
+
+    # read in contrasts matrix (add relevant labels)
+    arr = np.loadtxt(forward_csv(open(conmat), "/Matrix"), skiprows=1)
+    lower_level_contrasts = pd.DataFrame(locate_by_pattern(conmat, r'[+-/]ContrastName(\d+)[ \t\n\r\f\v](.*)'),
+                                         columns=["num", "name"])
+    lower_level_contrasts["name"] = [s.rstrip() for s in lower_level_contrasts["name"]]
+    evs = pd.read_csv(frfmat, header=None, dtype=str)
+
+    # assign labels to con matrix
+    contrasts = pd.DataFrame(arr, index=list(lower_level_contrasts["name"]), columns=list(evs[0]))
+
+    # find impacted contrasts...
+    ev_key_df = pd.DataFrame(ev_key, columns=["num", "name"])
+    copes = []
+    for (columnName, columnData) in contrasts.items():
+        if int(columnName) <= len(empty_ev_check_1):
+            flag = empty_ev_check_1[int(columnName) - 1]
+            # if ev is empty - check for "unreliable" contrasts
+            if flag:
+                copes.extend(list(columnData[columnData > 0].index))
+
+    copes = pd.Series(copes).drop_duplicates().tolist()
+
+    mask = [c in copes for c in lower_level_contrasts["name"]]
+    problem_copes = lower_level_contrasts[mask]
+
+    return list(problem_copes["name"])
+
+
+def get_lower_contrasts(lower_feat_dir):
+    conmat = os.path.join(lower_feat_dir, "design.con")
+    lower_level_contrasts = pd.DataFrame(locate_by_pattern(conmat, r'[+-/]ContrastName(\d+)[ \t\n\r\f\v](.*)'),
+                                         columns=["num", "name"])
+    lower_level_contrasts["name"] = [s.rstrip() for s in lower_level_contrasts["name"]]
+    return lower_level_contrasts
+
+
+def forward_csv(f, prefix):
+    pos = 0
+    while True:
+        line = f.readline()
+        if not line or line.startswith(prefix):
+            f.seek(pos)
+            return f
+        pos += len(line.encode('utf-8'))
 

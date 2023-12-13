@@ -777,7 +777,7 @@ def concat_fmri(gear_options: dict, app_options: dict, gear_context: GearToolkit
         cmd = cmd + " " + bold_file_final
 
     # run concatenate command
-    # execute_shell(cmd, dryrun=False, cwd=app_options["work-dir"])
+    execute_shell(cmd, dryrun=False, cwd=app_options["work-dir"])
 
     # set new total fmri dims
     app_options["func_file"] = os.path.join(app_options["work-dir"], "concat_fmri.nii.gz")
