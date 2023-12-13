@@ -238,45 +238,45 @@ def _add_volumes(bold_file, bold_cut_file, n_volumes):
 
 def _normalize_volumes(bold_file):
     out = fname_presuffix(bold_file, suffix='_psc')
-    with tempfile.TemporaryDirectory(dir=os.getcwd()) as tmpdir:
-        tmean = MeanImage()
-        tmean.inputs.in_file = bold_file
-        tmean.inputs.out_file = op.join(tmpdir, "mean_func")
-        log.info(tmean.cmdline)
-        res = tmean.run()
-
-        bet = BET()
-        bet.inputs.in_file = op.join(tmpdir, "mean_func.nii.gz")
-        bet.inputs.frac = 0.3
-        bet.inputs.out_file = op.join(tmpdir, "mask")
-        bet.inputs.no_output = True
-        bet.inputs.mask = True
-        log.info(bet.cmdline)
-        res = bet.run()
-
-        fslstats = ImageStats()
-        fslstats.inputs.in_file = bold_file
-        fslstats.inputs.mask_file = op.join(tmpdir, "mask_mask.nii.gz")
-        fslstats.inputs.op_string = "-p 50"
-        log.info(fslstats.cmdline)
-        res = fslstats.run()
-
-        value = 10000 / res.outputs.out_stat
-
-        dil = DilateImage()
-        dil.inputs.in_file = op.join(tmpdir, "mask_mask.nii.gz")
-        dil.inputs.operation = "max"
-        dil.inputs.out_file = op.join(tmpdir, "mask.nii.gz")
-        log.info(dil.cmdline)
-        res = dil.run()
-
-        maths = MathsCommand()
-        maths.inputs.in_file = bold_file
-        maths.inputs.args = "-mul "+str(value)
-        maths.inputs.out_file = out
-        log.info(maths.cmdline)
-        res = maths.run()
-
-        log.info("Normalized by global median nifti file saved: %s", out)
+    # with tempfile.TemporaryDirectory(dir=os.getcwd()) as tmpdir:
+    #     tmean = MeanImage()
+    #     tmean.inputs.in_file = bold_file
+    #     tmean.inputs.out_file = op.join(tmpdir, "mean_func")
+    #     log.info(tmean.cmdline)
+    #     res = tmean.run()
+    #
+    #     bet = BET()
+    #     bet.inputs.in_file = op.join(tmpdir, "mean_func.nii.gz")
+    #     bet.inputs.frac = 0.3
+    #     bet.inputs.out_file = op.join(tmpdir, "mask")
+    #     bet.inputs.no_output = True
+    #     bet.inputs.mask = True
+    #     log.info(bet.cmdline)
+    #     res = bet.run()
+    #
+    #     fslstats = ImageStats()
+    #     fslstats.inputs.in_file = bold_file
+    #     fslstats.inputs.mask_file = op.join(tmpdir, "mask_mask.nii.gz")
+    #     fslstats.inputs.op_string = "-p 50"
+    #     log.info(fslstats.cmdline)
+    #     res = fslstats.run()
+    #
+    #     value = 10000 / res.outputs.out_stat
+    #
+    #     dil = DilateImage()
+    #     dil.inputs.in_file = op.join(tmpdir, "mask_mask.nii.gz")
+    #     dil.inputs.operation = "max"
+    #     dil.inputs.out_file = op.join(tmpdir, "mask.nii.gz")
+    #     log.info(dil.cmdline)
+    #     res = dil.run()
+    #
+    #     maths = MathsCommand()
+    #     maths.inputs.in_file = bold_file
+    #     maths.inputs.args = "-mul "+str(value)
+    #     maths.inputs.out_file = out
+    #     log.info(maths.cmdline)
+    #     res = maths.run()
+    #
+    #     log.info("Normalized by global median nifti file saved: %s", out)
 
     return out

@@ -697,10 +697,9 @@ def concat_confounds(gear_options: dict, app_options: dict, gear_context: GearTo
 
         # get run regressor
         nvols = nb.load(app_options["func_file"]).shape[3]
-        arr = np.zeros([nvols, len(app_options["task-list"])])
-        arr[:,idx] = 1
-        numrange = [*range(0, len(app_options["task-list"]), 1)]
-        cols = ["run_" + str(s).zfill(2) for s in numrange]
+        arr = np.zeros([nvols, 1])
+        arr[:, 0] = 1
+        cols = ["runid"]
         df1 = pd.DataFrame(arr, columns=cols)
         data = pd.concat([data, df1], axis=1)
 
@@ -727,7 +726,22 @@ def concat_confounds(gear_options: dict, app_options: dict, gear_context: GearTo
             confounds_df = data
 
         # trim initial rows and concatenate across runs
-        all_confounds_df = pd.concat([all_confounds_df, confounds_df.iloc[nvolumes:]], axis = 0)
+        confounds_df.columns = ["run_" + str(idx).zfill(2) + "_" + s for s in confounds_df.columns]
+
+        confounds_df = confounds_df.iloc[nvolumes:]
+
+        # add zeros buffer
+        arr = np.zeros([confounds_df.shape[0], all_confounds_df.shape[1]])
+        df = pd.DataFrame(arr, columns=all_confounds_df.columns)
+
+        arr = np.zeros([all_confounds_df.shape[0], confounds_df.shape[1]])
+        df2 = pd.DataFrame(arr, columns=confounds_df.columns)
+
+        all_confounds_df = pd.concat([all_confounds_df, df], axis=0, ignore_index=True)
+        confounds_df = pd.concat([df2, confounds_df], axis=0, ignore_index=True)
+
+        # combine final confounds set
+        all_confounds_df = pd.concat([all_confounds_df, confounds_df], axis=1)
 
     # assign final confounds file for task
     if not all_confounds_df.empty:
@@ -777,7 +791,7 @@ def concat_fmri(gear_options: dict, app_options: dict, gear_context: GearToolkit
         cmd = cmd + " " + bold_file_final
 
     # run concatenate command
-    execute_shell(cmd, dryrun=False, cwd=app_options["work-dir"])
+    # execute_shell(cmd, dryrun=False, cwd=app_options["work-dir"])
 
     # set new total fmri dims
     app_options["func_file"] = os.path.join(app_options["work-dir"], "concat_fmri.nii.gz")
