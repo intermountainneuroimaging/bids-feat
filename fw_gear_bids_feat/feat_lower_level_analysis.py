@@ -47,9 +47,6 @@ def run(gear_options: dict, app_options: dict, gear_context: GearToolkitContext)
 
     commands = []
 
-    if not type(app_options["task-list"]) == list:
-        app_options["task-list"] = [app_options["task-list"]]
-
     # check if run configuration is single run or multi run mode (concatenated)
     if app_options["multirun"] == False:
 
@@ -447,14 +444,24 @@ def identify_feat_paths(gear_options: dict, app_options: dict):
         # select confound file location
         if app_options["confounds_default"]:
             # find confounds file...
-            input_path = searchfiles(
-                os.path.join(app_options["funcpath"], "*" + lookup_table["TASK"] + "*confounds_timeseries.tsv"))
-            app_options["confounds_file"] = input_path[0]
+            confounds_file_name = locate_by_pattern(design_file, r'set confoundev_files\(1\) "(.*)"')
+            confounds_name = apply_lookup(confounds_file_name[0], lookup_table)
 
-            if not input_path:
-                log.error("Unable to locate confounds file...exiting.")
-            else:
+            if os.path.exists(confounds_name):
+                app_options["confounds_file"] = confounds_name
                 log.info("Using confounds file: %s", app_options["confounds_file"])
+            else:
+                app_options["confounds_file"] = None
+
+            # do some error logging... if list of confound column names passed, but no spreadsheet found -> ERROR
+            if not app_options["confounds_file"] and app_options["confound-list"]:
+                log.error("Unable to locate confounds file...exiting.")
+
+            # do some error logging... if no spreadsheet found and non-steady state volume removal not set -> WARNING
+            if not app_options["confounds_file"] and not app_options["DropNonSteadyState"]:
+                log.warning("No confounds file present and no confounds file will be created during processing. Resetting FEAT confound parameter to false.")
+                app_options["include_confounds"] = False
+                replace_line(design_file, r'set fmri\(confoundevs\)', 'set fmri(confoundevs) 0')
 
     # if output name not given in config - use output name from template
     if not app_options["output-name"]:

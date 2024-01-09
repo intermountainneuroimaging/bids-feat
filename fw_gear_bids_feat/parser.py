@@ -6,6 +6,7 @@ import os
 import logging
 from fw_gear_bids_feat.support_functions import execute_shell
 import errorhandler
+import re
 
 log = logging.getLogger(__name__)
 
@@ -111,18 +112,34 @@ def parse_config(
     if "," in app_options["task-list"]:
         app_options["task-list"] = app_options["task-list"].replace(" ","").split(",")
 
+    if not type(app_options["task-list"]) == list:
+        app_options["task-list"] = [app_options["task-list"]]
+
     # building fsf - use file mapper methods to generate bids filename and path
     destination = gear_context.client.get(gear_context.destination["id"])
-    sid = gear_context.client.get(destination.parents.subject)
-    sesid = gear_context.client.get(destination.parents.session)
+    subject = gear_context.client.get(destination.parents.subject)
+    session = gear_context.client.get(destination.parents.session)
 
-    app_options["sid"] = sid.label
-    app_options["sesid"] = sesid.label
+    app_options["sid"] = subject.label
+    app_options["sesid"] = session.label
+
+    # check if tasks are exact match to existing acquisitions, or look for wildcard match
+    final_task_list = []
+    acq_labels = [acq.label for acq in session.acquisitions.iter_find()]
+    for cc in app_options["task-list"]:
+        # look for a matching fmri acquisition -- if none found error... regular expressions ok...
+        pattern = re.compile(cc)
+        for regex_col in [s for s in acq_labels if
+                          bool(re.search(pattern, s)) and ("ignore-BIDS" not in s) and ("sbref" not in s.lower())]:
+            final_task_list.append(regex_col)
+
+    final_task_list = sorted(set(final_task_list))
+    app_options["task-list"] = [s.replace("func-bold_task-", "") for s in final_task_list]
 
     return gear_options, app_options
 
 
-def unzip_inputs(gear_options, zip_filename):
+def  unzip_inputs(gear_options, zip_filename):
     """
     unzip_inputs unzips the contents of zipped gear output into the working
     directory.
