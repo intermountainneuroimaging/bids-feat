@@ -34,7 +34,7 @@ Many assumptions are made when generating the job design file. Please closely in
 
 `output-name`: [NAME].feat directory name. If left blank, output name will be drawn from the fsf template file.
 
-`confound-list`: Comma seperated list of components to be included in feat glm confounds. Confound timeseries will be pulled from confound file in inputs if passed, otherwise defaults to using bids derivative file '*counfound_timeseries.tsv'. Example entry: rot_x, rot_y, rot_z, trans_x, trans_y, trans_z. If left blank no confounds will be included in feat analysis.
+`confound-list`: Comma seperated list of components to be included in feat glm confounds. Confound timeseries will be pulled from confound file in inputs if passed, otherwise defaults to using bids derivative file '*counfound_timeseries.tsv'. Example entry: rot_x, rot_y, rot_z, trans_x, trans_y, trans_z. If left blank no confounds will be included in feat analysis. Python regular expressions may be used to select variable number of components.
 
 `DropNonSteadyState`: set whether or not to remove XX number of inital non-steady state volumes. If no value is passed in 'DummyVolumes', non-steady state number is taken from mriqc IQMs, if neither are defined, an error will be returned.
 
@@ -148,6 +148,9 @@ As you can see from the example above, the conditions labeled in the *events.tsv
 
 ### Tips for Success:
 The best way to create a template design file is to first generate an example feat model on your local computer. Within the FSL FEAT user interface, make all the selections desired for the first level analysis. Point to example input files. Add all the desired explanatory variables, and contrasts. Once you are satisfied you have created the correct feat model design, safe the design configuration from the user interface. Open the "design.fsf" file in a text editor. Locate all the file paths inserted in the file, and update these paths with the lookup table placeholders where necessary. Save and close the final design template.  
+
+## Using Python Regular Expressions
+Selecting confounds to include as regressors of no-interest can be done using the config setting "confound-list". Use regular expressions where necessary to select a sub-group of all columns. For example "^rot_x" can be used to select all x rotational columns: rot_x, rot_x_derivative1, rot_x_power2, and rot_x_derivative1_power2. Refer to python's re package for more information on using python regular expressions [here](https://docs.python.org/3/howto/regex.html).
 
 ## Building Event Files
 The flywheel bids-feat gear is designed to act on three types of event files: 

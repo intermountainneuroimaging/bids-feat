@@ -257,7 +257,7 @@ def _normalize_volumes(bold_file):
         fslstats = ImageStats()
         fslstats.inputs.in_file = bold_file
         fslstats.inputs.mask_file = op.join(tmpdir, "mask_mask.nii.gz")
-        fslstats.inputs.op_string = "-p 50"
+        fslstats.inputs.op_string = "-P 50"
         log.info(fslstats.cmdline)
         res = fslstats.run()
 

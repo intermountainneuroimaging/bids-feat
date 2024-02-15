@@ -792,6 +792,8 @@ def concat_fmri(gear_options: dict, app_options: dict, gear_context: GearToolkit
         bold_file = app_options["func_file"]
         bold_file_new = _remove_volumes(bold_file, nvolumes)
 
+        # try to apply mask - if exists...
+
         # normalize data
         bold_file_final = _normalize_volumes(bold_file_new)
 
@@ -821,7 +823,8 @@ def concat_events(gear_options: dict, app_options: dict, gear_context: GearToolk
 
     log.info("Building events files...")
 
-    starttime = 0
+    totaltime = 0
+    totaltrs = 0
 
     events = pd.DataFrame()
     for task in app_options["task-list"]:
@@ -841,18 +844,21 @@ def concat_events(gear_options: dict, app_options: dict, gear_context: GearToolk
         if not app_options["events-in-inputs"]:
             download_event_files(gear_options, app_options, gear_context)
 
-        df = pd.read_csv(app_options["event-file"], sep="\t")
+        df = pd.read_csv(app_options["event-file"], delim_whitespace=True)
 
-        # shift timing
-        offset = starttime - dummyvols * tr
-        totaltime = nvols * tr - dummyvols * tr
-        df["onset"] = df["onset"] + offset
+        # local shift for each run...
+        df["onset"] = df["onset"] - dummyvols * tr
+
+        # shift for run stacking
+        df["onset"] = df["onset"] + totaltime
 
         # next iteration startime
-        starttime = starttime + totaltime
+        totaltrs = totaltrs + nvols - dummyvols
+        totaltime = totaltrs * tr
         events = pd.concat([events, df], axis=0)
 
     events = events.sort_values(by=['onset'])
+    events.loc[events["onset"]<0,"onset"]=0
 
     app_options["event-file"] = os.path.join(app_options["funcpath"], "concat-events.tsv")
 
