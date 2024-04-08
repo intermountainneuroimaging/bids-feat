@@ -13,6 +13,7 @@ log = logging.getLogger(__name__)
 # Track if message gets logged with severity of error or greater
 error_handler = errorhandler.ErrorHandler()
 
+
 def parse_config(
         gear_context: GearToolkitContext,
 ) -> Tuple[dict, dict]:
@@ -36,7 +37,6 @@ def parse_config(
         "preproc_zipfile": gear_context.get_input_path("preprocessing-pipeline-zip"),
         "FSF_TEMPLATE": gear_context.get_input_path("FSF_TEMPLATE")
     }
-
 
     # set the output dir name for the BIDS app:
     gear_options["output_analysis_id_dir"] = (
@@ -110,7 +110,7 @@ def parse_config(
 
     # if task-list is a comma seperated list, apply nifti concatenation for analysis
     if "," in app_options["task-list"]:
-        app_options["task-list"] = app_options["task-list"].replace(" ","").split(",")
+        app_options["task-list"] = app_options["task-list"].replace(" ", "").split(",")
 
     if not type(app_options["task-list"]) == list:
         app_options["task-list"] = [app_options["task-list"]]
@@ -139,7 +139,7 @@ def parse_config(
     return gear_options, app_options
 
 
-def  unzip_inputs(gear_options, zip_filename):
+def unzip_inputs(gear_options, zip_filename):
     """
     unzip_inputs unzips the contents of zipped gear output into the working
     directory.
@@ -150,7 +150,7 @@ def  unzip_inputs(gear_options, zip_filename):
         zip_filename (string): The file to be unzipped
     """
     rc = 0
-    outpath=[]
+    outpath = []
     # use linux "unzip" methods in shell in case symbolic links exist
     log.info("Unzipping file, %s", zip_filename)
     cmd = "unzip -qq -o " + zip_filename + " -d " + str(gear_options["work-dir"])
@@ -166,7 +166,7 @@ def  unzip_inputs(gear_options, zip_filename):
     if len(top[0]) == 24:
         # directory starts with flywheel destination id - obscure this for now...
 
-        cmd = "mv "+top[0]+'/* . '
+        cmd = "mv " + top[0] + '/* . '
         rc = execute_shell(cmd, cwd=gear_options["work-dir"])
         if rc > 0:
             cmd = "cp -R " + top[0] + '/* . '
@@ -189,5 +189,3 @@ def  unzip_inputs(gear_options, zip_filename):
         return run_error
 
     return rc, outpath
-
-

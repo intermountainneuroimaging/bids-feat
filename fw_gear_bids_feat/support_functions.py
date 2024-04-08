@@ -227,8 +227,11 @@ def _add_volumes(bold_file, bold_cut_file, n_volumes):
     bold_cut_img = nb.load(bold_cut_file)
     bold_cut_data = bold_cut_img.get_fdata()
 
-    # assign everything from n_volumes foward to bold_cut_data
+    # assign everything from n_volumes forward to bold_cut_data
     bold_data[..., n_volumes:] = bold_cut_data
+
+    # assume all values less than 1 should be 0 (rounding)
+    bold_data[ bold_data < 1] = 0
 
     out = bold_cut_file.replace("_cut","")
     bold_img.__class__(bold_data, bold_img.affine, bold_img.header).to_filename(out)
@@ -238,45 +241,52 @@ def _add_volumes(bold_file, bold_cut_file, n_volumes):
 
 def _normalize_volumes(bold_file):
     out = fname_presuffix(bold_file, suffix='_psc')
-    with tempfile.TemporaryDirectory(dir=os.getcwd()) as tmpdir:
-        tmean = MeanImage()
-        tmean.inputs.in_file = bold_file
-        tmean.inputs.out_file = op.join(tmpdir, "mean_func")
-        log.info(tmean.cmdline)
-        res = tmean.run()
+    # with tempfile.TemporaryDirectory(dir=os.getcwd()) as tmpdir:
+    tmpdir='/flywheel/v0/work'
+    tmean = MeanImage()
+    tmean.inputs.in_file = bold_file
+    tmean.inputs.out_file = op.join(tmpdir, "mean_func")
+    log.info(tmean.cmdline)
+    res = tmean.run()
 
-        bet = BET()
-        bet.inputs.in_file = op.join(tmpdir, "mean_func.nii.gz")
-        bet.inputs.frac = 0.3
-        bet.inputs.out_file = op.join(tmpdir, "mask")
-        bet.inputs.no_output = True
-        bet.inputs.mask = True
-        log.info(bet.cmdline)
-        res = bet.run()
+    bet = BET()
+    bet.inputs.in_file = op.join(tmpdir, "mean_func.nii.gz")
+    bet.inputs.frac = 0.3
+    bet.inputs.out_file = op.join(tmpdir, "mask")
+    bet.inputs.no_output = True
+    bet.inputs.mask = True
+    log.info(bet.cmdline)
+    res = bet.run()
 
-        fslstats = ImageStats()
-        fslstats.inputs.in_file = bold_file
-        fslstats.inputs.mask_file = op.join(tmpdir, "mask_mask.nii.gz")
-        fslstats.inputs.op_string = "-P 50"
-        log.info(fslstats.cmdline)
-        res = fslstats.run()
+    maths = MathsCommand()
+    maths.inputs.in_file = bold_file
+    maths.inputs.out_file = op.join(tmpdir, "bold_thres.nii.gz")
+    maths.inputs.args = " -mul "+op.join(tmpdir,"mask_mask.nii.gz")
+    log.info(maths.cmdline)
+    res = maths.run()
 
-        value = 10000 / res.outputs.out_stat
+    fslstats = ImageStats()
+    fslstats.inputs.in_file = op.join(tmpdir, "bold_thres.nii.gz")
+    fslstats.inputs.op_string = "-P 50"
+    log.info(fslstats.cmdline)
+    res = fslstats.run()
 
-        dil = DilateImage()
-        dil.inputs.in_file = op.join(tmpdir, "mask_mask.nii.gz")
-        dil.inputs.operation = "max"
-        dil.inputs.out_file = op.join(tmpdir, "mask.nii.gz")
-        log.info(dil.cmdline)
-        res = dil.run()
+    value = 10000 / res.outputs.out_stat
 
-        maths = MathsCommand()
-        maths.inputs.in_file = bold_file
-        maths.inputs.args = "-mul "+str(value)
-        maths.inputs.out_file = out
-        log.info(maths.cmdline)
-        res = maths.run()
+    dil = DilateImage()
+    dil.inputs.in_file = op.join(tmpdir, "mask_mask.nii.gz")
+    dil.inputs.operation = "max"
+    dil.inputs.out_file = op.join(tmpdir, "mask.nii.gz")
+    log.info(dil.cmdline)
+    res = dil.run()
 
-        log.info("Normalized by global median nifti file saved: %s", out)
+    maths = MathsCommand()
+    maths.inputs.in_file = bold_file
+    maths.inputs.args = "-mul "+str(value)
+    maths.inputs.out_file = out
+    log.info(maths.cmdline)
+    res = maths.run()
+
+    log.info("Normalized by global median nifti file saved: %s", out)
 
     return out

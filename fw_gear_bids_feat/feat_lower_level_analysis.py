@@ -87,6 +87,9 @@ def run(gear_options: dict, app_options: dict, gear_context: GearToolkitContext)
             # generate command - "stage" commands for final run
             commands.append(generate_command(gear_options, app_options))
 
+            # if dry run - link working files to dry run directory
+            store_dry_run_files(gear_options, app_options)
+
             if error_handler.fired:
                 log.critical('Failure: exiting with code 1 due to logged errors')
                 run_error = 1
@@ -109,6 +112,9 @@ def run(gear_options: dict, app_options: dict, gear_context: GearToolkitContext)
         # generate command - "stage" commands for final run
         commands.append(generate_command(gear_options, app_options))
 
+        # if dry run - link working files to dry run directory
+        store_dry_run_files(gear_options, app_options)
+
         if error_handler.fired:
             log.critical('Failure: exiting with code 1 due to logged errors')
             run_error = 1
@@ -123,6 +129,17 @@ def run(gear_options: dict, app_options: dict, gear_context: GearToolkitContext)
             cont_output=True,
             cwd=gear_options["work-dir"]
         )
+
+    # zip dry run directory and move to outputs
+    if gear_options["dry-run"]:
+        os.chdir(gear_options["work-dir"])
+        output_zipname = gear_options["output-dir"].absolute().as_posix() + "/dry_run_" + \
+                         gear_options["destination-id"] + ".zip"
+
+        # NEW method to zip working directory using 'zip --symlinks -r outzip.zip data/'
+        cmd = "zip --symlinks -r " + output_zipname + " dry-run/ "
+        execute_shell(cmd, cwd=str(app_options["work-dir"]))
+
 
     if not gear_options["dry-run"]:
 
@@ -345,7 +362,8 @@ def generate_ev_files(gear_options: dict, app_options: dict):
         for g in groups:
             ev = df[df["trial_type"] == g]
             ev1 = ev.copy()
-            ev1.loc[:, "weight"] = pd.Series([1 for x in range(len(df.index))])
+            if "weight" not in df.columns:
+                ev1.loc[:, "weight"] = pd.Series([1 for x in range(len(df.index))])
 
             ev1 = ev1.drop(columns=["trial_type"])
 
@@ -575,7 +593,7 @@ def generate_design_file(gear_options: dict, app_options: dict):
             cmd = """echo "0 0 0" > """ + os.path.join(app_options["event_dir"], "zeros.txt")
 
             if not os.path.exists(os.path.join(app_options["event_dir"], "zeros.txt")):
-                execute_shell(cmd, gear_options["dry-run"])
+                execute_shell(cmd)
             evfiles[0] = os.path.join(app_options["event_dir"], "zeros.txt")
             replace_line(design_file, r'set fmri\(shape' + num + '\)',
                          'set fmri(shape' + num + ') 10')
@@ -871,3 +889,22 @@ def concat_events(gear_options: dict, app_options: dict, gear_context: GearToolk
     return
 
 
+def store_dry_run_files(gear_options: dict, app_options: dict):
+    log.info("Gear run in dry-run mode. Storing all derived input files and exiting...")
+    if gear_options["dry-run"] == True:
+        # symlink useful files
+        dry_run_dir = gear_options["work-dir"] / "dry-run"
+        if not os.path.exists(dry_run_dir):
+            os.makedirs(dry_run_dir, exist_ok=True)
+
+        shutil.copy(app_options["design_file"],os.path.join(dry_run_dir,os.path.basename(app_options["design_file"])))
+        shutil.copy(app_options["func_file"], os.path.join(dry_run_dir, os.path.basename(app_options["func_file"])))
+        if "feat_confounds_file" in app_options:
+            shutil.copy(app_options["feat_confounds_file"],
+                       os.path.join(dry_run_dir, os.path.basename(app_options["feat_confounds_file"])))
+
+        if "ev_files" in app_options:
+            os.makedirs(dry_run_dir / "evs", exist_ok=True)
+            for f in app_options["ev_files"]:
+                shutil.copy(f, os.path.join(dry_run_dir, "evs", os.path.basename(f)))
+    return
