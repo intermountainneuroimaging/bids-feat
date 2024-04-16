@@ -67,6 +67,7 @@ def run(gear_options: dict, app_options: dict, gear_context: GearToolkitContext)
         log.parent.handlers[0].setFormatter(logging.Formatter('\t\t%(message)s'))
 
         log.info("DropNonSteadyState: %s", str(app_options["DropNonSteadyState"]))
+        log.info("DropNonSteadyStateMethod: %s", str(app_options["DropNonSteadyStateMethod"]))
         if "DummyVolumes" in app_options:
             log.info("DummyVolumes: %s", str(app_options["DummyVolumes"]))
         log.info("evformat: %s", str(app_options["evformat"]))

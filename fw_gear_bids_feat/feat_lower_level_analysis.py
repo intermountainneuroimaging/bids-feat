@@ -79,7 +79,16 @@ def run(gear_options: dict, app_options: dict, gear_context: GearToolkitContext)
             # prepare events files (for each task in list) -- only download acq events for non multirun config
             if not app_options["events-in-inputs"]:
                 download_event_files(gear_options, app_options, gear_context)
+
+            # if drop non-steady state method is trim, trim all events first, then generate evs
+            if app_options["DropNonSteadyStateMethod"] == "trim":
+                trim_ev_files(gear_options, app_options)
+
             generate_ev_files(gear_options, app_options)
+
+            # trim fmri if needed
+            if app_options["DropNonSteadyStateMethod"] == "trim":
+                app_options["func_file"] = _remove_volumes(app_options["func_file"], app_options["AcqDummyVolumes"])
 
             # prepare fsf design file
             generate_design_file(gear_options, app_options)
@@ -88,7 +97,8 @@ def run(gear_options: dict, app_options: dict, gear_context: GearToolkitContext)
             commands.append(generate_command(gear_options, app_options))
 
             # if dry run - link working files to dry run directory
-            store_dry_run_files(gear_options, app_options)
+            if gear_options["dry-run"] == True:
+                store_dry_run_files(gear_options, app_options)
 
             if error_handler.fired:
                 log.critical('Failure: exiting with code 1 due to logged errors')
@@ -96,6 +106,8 @@ def run(gear_options: dict, app_options: dict, gear_context: GearToolkitContext)
                 return run_error
     else:
         # using concatenated task workflow
+        if app_options["DropNonSteadyStateMethod"] == "regressor":
+            log.warning("Non-steady state volumes are always trimmed in multi-run mode. Ignoring user configuration selection!")
         # 1. concatenate all func files
         app_options["concat-file"] = concat_fmri(gear_options, app_options, gear_context)
 
@@ -113,7 +125,8 @@ def run(gear_options: dict, app_options: dict, gear_context: GearToolkitContext)
         commands.append(generate_command(gear_options, app_options))
 
         # if dry run - link working files to dry run directory
-        store_dry_run_files(gear_options, app_options)
+        if gear_options["dry-run"] == True:
+            store_dry_run_files(gear_options, app_options)
 
         if error_handler.fired:
             log.critical('Failure: exiting with code 1 due to logged errors')
@@ -241,9 +254,9 @@ def generate_confounds_file(gear_options: dict, app_options: dict, gear_context:
     dummy_scans = app_options['AcqDummyVolumes']
     nvols = app_options['AcqNumFrames']
 
-    log.info("Using %s volumes in confounds file...", str(nvols))
+    # log.info("Using %s volumes in confounds file...", str(nvols))
 
-    if dummy_scans > 0:
+    if dummy_scans > 0 and app_options["DropNonSteadyStateMethod"] == "regressor":
 
         arr = np.zeros([nvols, dummy_scans])
 
@@ -257,7 +270,10 @@ def generate_confounds_file(gear_options: dict, app_options: dict, gear_context:
         cols = ["dummy_tr_" + str(s).zfill(2) for s in numrange]
 
         all_confounds_df.columns = cols
-
+    if app_options["DropNonSteadyStateMethod"] == "trim":
+        idx = dummy_scans
+    else:
+        idx = 0
     if app_options['confound-list']:
         # load confounds file - the pull relevant columns
         log.info("Using confounds spreadsheet: %s", str(app_options["confounds_file"]))
@@ -282,6 +298,10 @@ def generate_confounds_file(gear_options: dict, app_options: dict, gear_context:
 
     # assign final confounds file for task
     if not all_confounds_df.empty:
+        all_confounds_df = all_confounds_df.iloc[idx:]
+        # remove columns that are all 0's
+        all_confounds_df = all_confounds_df.loc[:, all_confounds_df.any(axis=0)]
+
         log.info("Including confounds: %s", ", ".join(all_confounds_df.columns))
         all_confounds_df.to_csv(
             os.path.join(app_options["funcpath"], 'feat-confounds_' + app_options["task"] + '.txt'),
@@ -331,6 +351,44 @@ def download_event_files(gear_options: dict, app_options: dict, gear_context: Ge
             "Multiple event files in flywheel acquisition match selection criteria... not sure how to proceed")
 
     return app_options
+
+
+def trim_ev_files(gear_options: dict, app_options: dict):
+    """
+    adjust local timing for event file based on number of dummy volumes.
+    Args:
+        gear_options:
+        app_options:
+
+    Returns:
+
+    """
+
+    df = pd.read_csv(app_options["event-file"], sep="\t")
+
+    # if mode is "trim" we need to shift timing of input evs to match trimmed frames
+    if app_options["DropNonSteadyStateMethod"] == "trim":
+        # identify starting tr and shape
+        nvols = nb.load(app_options["func_file"]).shape[3]
+        tr = nb.load(app_options["func_file"]).header["pixdim"][4]
+        dummyvols = app_options['AcqDummyVolumes']
+
+        # local shift for each run...
+        log.info("Shifting Onset time to match trimmed fMRI series: -%s seconds.", '{0:.2f}'.format(dummyvols * tr))
+        df["onset"] = df["onset"] - dummyvols * tr
+
+        if any(df["onset"] < 0):
+            # if any events occur before new scanner start, remove entire event, otherwise offset any negative starttimes to zero
+            df = df.drop(df[df["onset"] + df["duration"] < 0].index)
+
+            # all other events starting before scanner start should be adjusted so new shorter duration is set
+            df.loc[df["onset"] < 0, "duration"] = df.loc[df["onset"] < 0, ["onset", "duration"]].sum(axis=1)
+
+            # if any timing is now before 0, set to 0
+            df.loc[df["onset"] < 0, "onset"] = 0
+
+        # write new event file with altered timing (used in generate_ev_files function)
+        df.to_csv(app_options["event-file"], sep='\t', header=True, index=False)
 
 
 def generate_ev_files(gear_options: dict, app_options: dict):
@@ -487,13 +545,7 @@ def identify_feat_paths(gear_options: dict, app_options: dict):
         app_options["output-name"] = Path(output_name[0]).name
 
     # scan length
-    cmd = "fslnvols " + app_options["func_file"]
-    log.debug("\n %s", cmd)
-    terminal = sp.Popen(
-        cmd, shell=True, stdout=sp.PIPE, stderr=sp.PIPE, universal_newlines=True
-    )
-    stdout, stderr = terminal.communicate()
-    app_options["nvols"] = stdout.strip("\n")
+    app_options["nvols"] = get_fmri_length(app_options["func_file"])
 
     # repetition time
     cmd = "fslval " + app_options["func_file"] + " pixdim4"
@@ -506,6 +558,18 @@ def identify_feat_paths(gear_options: dict, app_options: dict):
 
     return app_options
 
+
+def get_fmri_length(filename):
+    # scan length
+    cmd = "fslnvols " + filename
+    log.debug("\n %s", cmd)
+    terminal = sp.Popen(
+        cmd, shell=True, stdout=sp.PIPE, stderr=sp.PIPE, universal_newlines=True
+    )
+    stdout, stderr = terminal.communicate()
+    nvols = stdout.strip("\n")
+
+    return nvols
 
 def generate_design_file(gear_options: dict, app_options: dict):
     """
@@ -536,6 +600,7 @@ def generate_design_file(gear_options: dict, app_options: dict):
     replace_line(design_file, r'set feat_files\(1\)', 'set feat_files(1) "' + app_options["func_file"] + '"')
 
     # 3. total func length
+    app_options["nvols"] = get_fmri_length(app_options["func_file"])
     replace_line(design_file, r'set fmri\(npts\)', 'set fmri(npts) ' + str(app_options["nvols"]))
 
     # 3a. repetition time (TR)
@@ -867,6 +932,16 @@ def concat_events(gear_options: dict, app_options: dict, gear_context: GearToolk
         # local shift for each run...
         df["onset"] = df["onset"] - dummyvols * tr
 
+        if any(df["onset"] < 0):
+            # if any events occur before new scanner start, remove entire event, otherwise offset any negative starttimes to zero
+            df = df.drop(df[df["onset"] + df["duration"] < 0].index)
+
+            # all other events starting before scanner start should be adjusted so new shorter duration is set
+            df.loc[df["onset"] < 0, "duration"] = df.loc[df["onset"] < 0, ["onset", "duration"]].sum(axis=1)
+
+            # if any timing is now before 0, set to 0
+            df.loc[df["onset"] < 0, "onset"] = 0
+
         # shift for run stacking
         df["onset"] = df["onset"] + totaltime
 
@@ -876,7 +951,6 @@ def concat_events(gear_options: dict, app_options: dict, gear_context: GearToolk
         events = pd.concat([events, df], axis=0)
 
     events = events.sort_values(by=['onset'])
-    events.loc[events["onset"]<0,"onset"]=0
 
     app_options["event-file"] = os.path.join(app_options["funcpath"], "concat-events.tsv")
 
@@ -891,20 +965,20 @@ def concat_events(gear_options: dict, app_options: dict, gear_context: GearToolk
 
 def store_dry_run_files(gear_options: dict, app_options: dict):
     log.info("Gear run in dry-run mode. Storing all derived input files and exiting...")
-    if gear_options["dry-run"] == True:
-        # symlink useful files
-        dry_run_dir = gear_options["work-dir"] / "dry-run"
-        if not os.path.exists(dry_run_dir):
-            os.makedirs(dry_run_dir, exist_ok=True)
 
-        shutil.copy(app_options["design_file"],os.path.join(dry_run_dir,os.path.basename(app_options["design_file"])))
-        shutil.copy(app_options["func_file"], os.path.join(dry_run_dir, os.path.basename(app_options["func_file"])))
-        if "feat_confounds_file" in app_options:
-            shutil.copy(app_options["feat_confounds_file"],
-                       os.path.join(dry_run_dir, os.path.basename(app_options["feat_confounds_file"])))
+    # symlink useful files
+    dry_run_dir = gear_options["work-dir"] / "dry-run"
+    if not os.path.exists(dry_run_dir):
+        os.makedirs(dry_run_dir, exist_ok=True)
 
-        if "ev_files" in app_options:
-            os.makedirs(dry_run_dir / "evs", exist_ok=True)
-            for f in app_options["ev_files"]:
-                shutil.copy(f, os.path.join(dry_run_dir, "evs", os.path.basename(f)))
+    shutil.copy(app_options["design_file"],os.path.join(dry_run_dir,os.path.basename(app_options["design_file"])))
+    shutil.copy(app_options["func_file"], os.path.join(dry_run_dir, os.path.basename(app_options["func_file"])))
+    if "feat_confounds_file" in app_options:
+        shutil.copy(app_options["feat_confounds_file"],
+                   os.path.join(dry_run_dir, os.path.basename(app_options["feat_confounds_file"])))
+
+    if "ev_files" in app_options:
+        os.makedirs(dry_run_dir / "evs", exist_ok=True)
+        for f in app_options["ev_files"]:
+            shutil.copy(f, os.path.join(dry_run_dir, "evs", os.path.basename(f)))
     return

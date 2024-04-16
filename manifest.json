@@ -34,6 +34,15 @@
           "maximum": 9999,
           "description": "Number of dummy volumes to ignore at the beginning of scan. Leave blank if you want to use the non-steady state volumes recorded in mriqc IQMs."
       },
+      "DropNonSteadyStateMethod": {
+        "default": "regressor",
+        "description": "(regressor | trim) Select method used to handle non-steady state volume removal. Warning: running concatenated 'multirun' option will always use trim removal method. Not relevant for higher level analysis.  ",
+        "type": "string",
+        "enum": [
+          "regressor",
+          "trim"
+        ]
+      },
       "multirun": {
           "type": "boolean",
           "default": false,
@@ -143,7 +152,7 @@
         },
         "gear-builder": {
             "category": "analysis",
-            "image": "amhe4269/bids-feat:6.0.4_inc0.6rc2"
+            "image": "amhe4269/bids-feat:6.0.4_inc0.6rc4"
         },
         "license": "Apache-2.0"
     },
@@ -208,5 +217,5 @@
     "name": "bids-feat",
     "source": "https://github.com/intermountainneuroimaging/bids-feat",
     "url": "http://fsl.fmrib.ox.ac.uk/fsl/fslwiki/FEAT",
-    "version": "6.0.4_inc0.6rc2"
+    "version": "6.0.4_inc0.6rc4"
 }

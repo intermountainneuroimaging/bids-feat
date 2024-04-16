@@ -50,6 +50,7 @@ def parse_config(
         "confound-list",
         "DropNonSteadyState",
         "DummyVolumes",
+        "DropNonSteadyStateMethod",
         "multirun",
         "events-suffix",
         "evformat",
