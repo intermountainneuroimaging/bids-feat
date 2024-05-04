@@ -152,7 +152,7 @@
         },
         "gear-builder": {
             "category": "analysis",
-            "image": "amhe4269/bids-feat:6.0.4_inc0.6rc4"
+            "image": "amhe4269/bids-feat:6.0.4_inc0.7"
         },
         "license": "Apache-2.0"
     },
@@ -217,5 +217,5 @@
     "name": "bids-feat",
     "source": "https://github.com/intermountainneuroimaging/bids-feat",
     "url": "http://fsl.fmrib.ox.ac.uk/fsl/fslwiki/FEAT",
-    "version": "6.0.4_inc0.6rc4"
+    "version": "6.0.4_inc0.7"
 }

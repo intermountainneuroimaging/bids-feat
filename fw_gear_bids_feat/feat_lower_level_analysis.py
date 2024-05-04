@@ -161,6 +161,11 @@ def run(gear_options: dict, app_options: dict, gear_context: GearToolkitContext)
 
         for featdir in featdirs:
 
+            # if registration was skipped, add dummy registration
+            if "highres_file" not in app_options:
+                space = [s for s in app_options["func_file"].split("_") if "space" in s][0]
+                add_dummy_reg(featdir,space)
+
             # Create output directory
             output_analysis_id_dir = os.path.join(gear_options["destination-id"], app_options["pipeline"], "feat",
                                                   "sub-" + app_options["sid"], "ses-" + app_options["sesid"])
@@ -982,3 +987,75 @@ def store_dry_run_files(gear_options: dict, app_options: dict):
         for f in app_options["ev_files"]:
             shutil.copy(f, os.path.join(dry_run_dir, "evs", os.path.basename(f)))
     return
+
+
+def add_dummy_reg(featdir, reg_space):
+
+    # 1. copy $FSLDIR/etc/flirtsch/ident.mat -> reg/example_func2standard.mat
+    # 2. overwrite the standard.nii.gz image with the mean_func.nii.gz
+    p = featdir
+    if not os.path.exists(op.join(p, "reg")):
+        os.makedirs(op.join(p, "reg"))
+
+        # copy placeholder identity matrix to registration folder (will apply no registration at higher level analysis
+        shutil.copy(op.join(os.environ["FSLDIR"], "etc", "flirtsch", "ident.mat"),
+                    op.join(p, "reg", "example_func2standard.mat"))
+
+        # copy other stand-in reg files
+        if "func" in reg_space:
+            shutil.copy(op.join(p, "mean_func.nii.gz"),
+                        op.join(p, "reg", "example_func2standard.nii.gz"))
+            shutil.copy(op.join(p, "mean_func.nii.gz"),
+                        op.join(p, "reg", "standard2example_func.nii.gz"))
+            shutil.copy(op.join(p, "mean_func.nii.gz"),
+                        op.join(p, "reg", "standard.nii.gz"))
+        elif "MNI152NLin" in reg_space:
+
+            shutil.copy(op.join(os.environ["FSLDIR"], "data", "standard", "MNI152_T1_2mm_brain.nii.gz"),
+                        op.join(p, "reg", "standard.nii.gz"))
+
+            # image registered in preproc shoul be in MNI152 space,
+            #  ...but not the same voxel size...
+            #  ...need to apply flirt first...
+            cmd = op.join(os.environ["FSLDIR"],"bin","flirt") + " -in " + op.join(p, "mean_func.nii.gz") + \
+                  " -ref " + "standard.nii.gz" + \
+                  " -out " + "example_func2standard.nii.gz" + " -applyxfm"
+            execute_shell(cmd, cwd=op.join(p, "reg"))
+
+        else:
+            return
+
+        # create pngs for reports
+        cmd = op.join(os.environ["FSLDIR"],"bin","slicer") + " example_func2standard standard -s 2 -x 0.35 sla.png " \
+                                                             "-x 0.45 slb.png -x 0.55 slc.png -x 0.65 sld.png -y " \
+                                                             "0.35 sle.png -y 0.45 slf.png -y 0.55 slg.png -y " \
+                                                             "0.65 slh.png -z 0.35 sli.png -z 0.45 slj.png -z " \
+                                                             "0.55 slk.png -z 0.65 sll.png "
+        execute_shell(cmd, cwd=op.join(p, "reg"))
+
+        cmd = op.join(os.environ["FSLDIR"],"bin","pngappend") + " sla.png + slb.png + slc.png + sld.png + sle.png " \
+                                                                "+ slf.png + slg.png + slh.png + sli.png + " \
+                                                                "slj.png + slk.png + sll.png " \
+                                                                "example_func2standard1.png "
+        execute_shell(cmd, cwd=op.join(p, "reg"))
+
+        cmd = op.join(os.environ["FSLDIR"],"bin","slicer") + " standard example_func2standard -s 2 -x 0.35 sla.png " \
+                                                             "-x 0.45 slb.png -x 0.55 slc.png -x 0.65 sld.png -y " \
+                                                             "0.35 sle.png -y 0.45 slf.png -y 0.55 slg.png -y " \
+                                                             "0.65 slh.png -z 0.35 sli.png -z 0.45 slj.png -z " \
+                                                             "0.55 slk.png -z 0.65 sll.png "
+        execute_shell(cmd, cwd=op.join(p, "reg"))
+
+        cmd = op.join(os.environ["FSLDIR"],"bin","pngappend") + " sla.png + slb.png + slc.png + sld.png + sle.png " \
+                                                                "+ slf.png + slg.png + slh.png + sli.png + " \
+                                                                "slj.png + slk.png + sll.png " \
+                                                                "example_func2standard2.png "
+        execute_shell(cmd, cwd=op.join(p, "reg"))
+
+        cmd = op.join(os.environ["FSLDIR"],"bin","pngappend") + " example_func2standard1.png - " \
+                                                                "example_func2standard2.png " \
+                                                                "example_func2standard.png "
+        execute_shell(cmd, cwd=op.join(p, "reg"))
+
+        cmd = "/bin/rm -f sl?.png example_func2standard2.png"
+        execute_shell(cmd, cwd=op.join(p, "reg"))
