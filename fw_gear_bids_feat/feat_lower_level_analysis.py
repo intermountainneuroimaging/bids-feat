@@ -162,7 +162,7 @@ def run(gear_options: dict, app_options: dict, gear_context: GearToolkitContext)
         for featdir in featdirs:
 
             # if registration was skipped, add dummy registration
-            if "highres_file" not in app_options:
+            if not app_options["highres_file"]:
                 space = [s for s in app_options["func_file"].split("_") if "space" in s][0]
                 add_dummy_reg(featdir,space)
 
@@ -995,6 +995,7 @@ def add_dummy_reg(featdir, reg_space):
     # 2. overwrite the standard.nii.gz image with the mean_func.nii.gz
     p = featdir
     if not os.path.exists(op.join(p, "reg")):
+        log.info("Using Mumford Registration Workaround: %s", str(p))
         os.makedirs(op.join(p, "reg"))
 
         # copy placeholder identity matrix to registration folder (will apply no registration at higher level analysis
