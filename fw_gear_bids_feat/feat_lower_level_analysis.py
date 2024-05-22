@@ -54,6 +54,9 @@ def run(gear_options: dict, app_options: dict, gear_context: GearToolkitContext)
 
             app_options["task"] = task
 
+            # check for input consistency and select next steps
+            template_checks(gear_options, app_options, gear_context)
+
             # generate filepaths for feat run (need this for other setup steps)
             identify_feat_paths(gear_options, app_options)
 
@@ -62,12 +65,16 @@ def run(gear_options: dict, app_options: dict, gear_context: GearToolkitContext)
                 run_error = 1
                 return run_error
 
-            # add all confounds from selected list to feat confounds (for each task in list)
-            generate_confounds_file(gear_options, app_options, gear_context)
+            # assign number of dummy scans (or none)
+            app_options = identify_dummyvols(gear_options, app_options, gear_context)
+
+            if app_options["include_confounds"]:
+                # add all confounds from selected list to feat confounds (for each task in list)
+                generate_confounds_file(gear_options, app_options, gear_context)
 
             df = pd.DataFrame({"func_file": app_options["func_file"], "funcpath": app_options["funcpath"],
                                "highres_file": app_options["highres_file"],
-                               "feat_confounds_file": app_options["feat_confounds_file"],
+                               "feat_confounds_file": app_options.get("feat_confounds_file") or None,
                                "trs": app_options["trs"], "nvols": app_options["nvols"],
                                "AcqDummyVolumes": app_options["AcqDummyVolumes"]}, index=[0])
 
@@ -108,6 +115,10 @@ def run(gear_options: dict, app_options: dict, gear_context: GearToolkitContext)
         # using concatenated task workflow
         if app_options["DropNonSteadyStateMethod"] == "regressor":
             log.warning("Non-steady state volumes are always trimmed in multi-run mode. Ignoring user configuration selection!")
+
+        # check for input consistency and select next steps
+        template_checks(gear_options, app_options, gear_context)
+
         # 1. concatenate all func files
         app_options["concat-file"] = concat_fmri(gear_options, app_options, gear_context)
 
@@ -162,7 +173,7 @@ def run(gear_options: dict, app_options: dict, gear_context: GearToolkitContext)
         for featdir in featdirs:
 
             # if registration was skipped, add dummy registration
-            if not app_options["highres_file"]:
+            if not app_options["highres_file"] or app_options["mumford_reg"]:
                 space = [s for s in app_options["func_file"].split("_") if "space" in s][0]
                 add_dummy_reg(featdir,space)
 
@@ -207,7 +218,7 @@ def run(gear_options: dict, app_options: dict, gear_context: GearToolkitContext)
     return run_error
 
 
-def generate_dummyvols_file(gear_options: dict, app_options: dict, gear_context: GearToolkitContext):
+def identify_dummyvols(gear_options: dict, app_options: dict, gear_context: GearToolkitContext):
     """
     build confounds file using dummy volumes entered ask config setting or from mriqc metadata. writes confounds file to work directory.
     Args:
@@ -251,9 +262,6 @@ def generate_confounds_file(gear_options: dict, app_options: dict, gear_context:
     log.info("Building confounds file...")
 
     all_confounds_df = pd.DataFrame()
-
-    # assign number of dummy scans (or none)
-    app_options = generate_dummyvols_file(gear_options, app_options, gear_context)
 
     # Build Dummy Scans Censor timeseries
     dummy_scans = app_options['AcqDummyVolumes']
@@ -314,6 +322,10 @@ def generate_confounds_file(gear_options: dict, app_options: dict, gear_context:
             sep=" ", na_rep=0)
         app_options["feat_confounds_file"] = os.path.join(app_options["funcpath"],
                                                           'feat-confounds_' + app_options["task"] + '.txt')
+    else:
+        app_options["feat_confounds_file"] = None
+        log.warning("Confounds file will not be included in analysis.")
+
 
     return app_options
 
@@ -456,7 +468,6 @@ def identify_feat_paths(gear_options: dict, app_options: dict):
 
     app_options["func_file"] = None
     app_options["highres_file"] = None
-    app_options["include_confounds"] = False
 
     design_file = gear_options["FSF_TEMPLATE"]
 
@@ -519,30 +530,27 @@ def identify_feat_paths(gear_options: dict, app_options: dict):
 
     # check if confounds file is defined in model
     confound_yn = locate_by_pattern(design_file, r'set fmri\(confoundevs\) (.*)')
-    if int(confound_yn[0]):
-        app_options["include_confounds"] = True
 
-        # select confound file location
-        if app_options["confounds_default"]:
-            # find confounds file...
-            confounds_file_name = locate_by_pattern(design_file, r'set confoundev_files\(1\) "(.*)"')
-            confounds_name = apply_lookup(confounds_file_name[0], lookup_table)
+    # select confound file location
+    if app_options["confounds_default"] and int(confound_yn[0]):
+        # find confounds file...
+        confounds_file_name = locate_by_pattern(design_file, r'set confoundev_files\(1\) "(.*)"')
+        confounds_name = apply_lookup(confounds_file_name[0], lookup_table)
 
-            if os.path.exists(confounds_name):
-                app_options["confounds_file"] = confounds_name
-                log.info("Using confounds file: %s", app_options["confounds_file"])
-            else:
-                app_options["confounds_file"] = None
+        if os.path.exists(confounds_name):
+            app_options["confounds_file"] = confounds_name
+            log.info("Using confounds file: %s", app_options["confounds_file"])
+        else:
+            app_options["confounds_file"] = None
 
-            # do some error logging... if list of confound column names passed, but no spreadsheet found -> ERROR
-            if not app_options["confounds_file"] and app_options["confound-list"]:
-                log.error("Unable to locate confounds file...exiting.")
+        # do some error logging... if list of confound column names passed, but no spreadsheet found -> ERROR
+        if not app_options["confounds_file"] and app_options["confound-list"]:
+            log.error("Unable to locate confounds file...exiting.")
 
-            # do some error logging... if no spreadsheet found and non-steady state volume removal not set -> WARNING
-            if not app_options["confounds_file"] and not app_options["DropNonSteadyState"]:
-                log.warning("No confounds file present and no confounds file will be created during processing. Resetting FEAT confound parameter to false.")
-                app_options["include_confounds"] = False
-                replace_line(design_file, r'set fmri\(confoundevs\)', 'set fmri(confoundevs) 0')
+        # do some error logging... if no spreadsheet found and non-steady state volume removal not set -> WARNING
+        if not app_options["confounds_file"] and (not app_options["DropNonSteadyState"] or app_options["DropNonSteadyStateMethod"] == "trim"):
+            log.warning("No confounds file present and no confounds file will be created during processing. Resetting FEAT confound parameter to false.")
+            replace_line(design_file, r'set fmri\(confoundevs\)', 'set fmri(confoundevs) 0')
 
     # if output name not given in config - use output name from template
     if not app_options["output-name"]:
@@ -575,6 +583,60 @@ def get_fmri_length(filename):
     nvols = stdout.strip("\n")
 
     return nvols
+
+
+def template_checks(gear_options: dict, app_options: dict, gear_context):
+    """
+    Check for consistency of user configuration settings and template options. Define stages to run based on user input.
+
+    Args:
+        gear_options (dict): options for the gear, from config.json
+        app_options (dict): options for the app, from config.json
+
+    Returns:
+        app_options (dict): updated options for the app, from config.json
+    """
+
+    design_file = gear_options["FSF_TEMPLATE"]
+
+    # TODO check registration consistency
+    # 1. check if registration should be applied...
+    reghighres_yn = locate_by_pattern(design_file, r'set fmri\(reghighres_yn\) (.*)')
+    regstandard_yn = locate_by_pattern(design_file, r'set fmri\(regstandard_yn\) (.*)')
+    regstandard_nonlinear_yn = locate_by_pattern(design_file, r'set fmri\(regstandard_nonlinear_yn\) (.*)')
+
+    if int(reghighres_yn[0]) == 0 and int(regstandard_yn[0]) == 0 and int(regstandard_nonlinear_yn[0]) == 0:
+        # no registration will be applied - use mumford workaround after feat run
+        app_options["mumford_reg"] = True
+    else:
+        app_options["mumford_reg"] = False
+
+    # 2. check confounds logic
+    confound_yn = locate_by_pattern(design_file, r'set fmri\(confoundevs\) (.*)')
+    confounds_file_name = locate_by_pattern(design_file, r'set confoundev_files\(1\) "(.*)"')
+
+    # case 1: confounds of no interest should be located from list in preprocessed spreadsheet
+    if int(confound_yn[0]) == 1 and app_options['confound-list'] and confounds_file_name[0]:
+        app_options["include_confounds"] = True
+
+    # case 2: confounds of no interest passed as seperate input for gear
+    elif int(confound_yn[0]) == 1 and gear_context.get_input_path("confounds-file"):
+        app_options["include_confounds"] = True
+
+    # case 3: drop non-steady state method uses regressor
+    elif app_options["DropNonSteadyStateMethod"] == "regressor" and app_options["DropNonSteadyState"]:
+        app_options["include_confounds"] = True
+
+    # case 4: multirun mode adds run regress at minimum
+    elif app_options["multirun"]:
+        app_options["include_confounds"] = True
+
+    # otherwise skip over confounds of no interest
+    else:
+        app_options["include_confounds"] = False
+
+    return app_options
+
 
 def generate_design_file(gear_options: dict, app_options: dict):
     """
@@ -623,17 +685,19 @@ def generate_design_file(gear_options: dict, app_options: dict):
         replace_line(design_file, r'set highres_files\(1\)',
                      'set feat_files(1) "' + app_options["highres_file"] + '"')
 
-    # check confounds parser consistency...
-    confound_yn = locate_by_pattern(design_file, r'set fmri\(confoundevs\) (.*)')
-    if not confound_yn[0] and "feat_confounds_file" in app_options:
-        log.critical("Error: confounds file selected in gear options, but not set in FSF TEMPLATE")
-    elif confound_yn[0] and "feat_confounds_file" not in app_options:
-        log.critical("Error: confounds file was not selected in gear options, but is set in FSF TEMPLATE")
+    # # check confounds parser consistency...
+    # confound_yn = locate_by_pattern(design_file, r'set fmri\(confoundevs\) (.*)')
+    # if not int(confound_yn[0]) and "feat_confounds_file" in app_options:
+    #     log.critical("Error: confounds file selected in gear options, but not set in FSF TEMPLATE")
+    # elif int(confound_yn[0]) and "feat_confounds_file" not in app_options:
+    #     log.critical("Error: confounds file was not selected in gear options, but is set in FSF TEMPLATE")
 
     # 5. if confounds: confounds path
-    if "feat_confounds_file" in app_options:
+    if app_options["include_confounds"] and "feat_confounds_file" in app_options:
         replace_line(design_file, r'set confoundev_files\(1\)',
                      'set confoundev_files(1) "' + app_options["feat_confounds_file"] + '"')
+        replace_line(design_file, r'set fmri\(confoundevs\)', 'set fmri(confoundevs) 1')
+
 
     # 6. events - find events by event name in desgin file
 
