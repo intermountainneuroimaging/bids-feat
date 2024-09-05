@@ -693,7 +693,7 @@ def generate_design_file(gear_options: dict, app_options: dict):
     #     log.critical("Error: confounds file was not selected in gear options, but is set in FSF TEMPLATE")
 
     # 5. if confounds: confounds path
-    if app_options["include_confounds"] and "feat_confounds_file" in app_options:
+    if app_options["include_confounds"] or "feat_confounds_file" in app_options:
         replace_line(design_file, r'set confoundev_files\(1\)',
                      'set confoundev_files(1) "' + app_options["feat_confounds_file"] + '"')
         replace_line(design_file, r'set fmri\(confoundevs\)', 'set fmri(confoundevs) 1')
@@ -926,8 +926,11 @@ def concat_fmri(gear_options: dict, app_options: dict, gear_context: GearToolkit
     """
 
     log.info("Building fmri file...")
-
-    cmd = "fslmerge -t concat_fmri"
+    # generate concat filename
+    app_options["task"] = app_options["task-list"][0]
+    find_feat_file(gear_options, app_options)
+    concat_filename = "concat_"+"_".join([i for i in app_options["func_file"].split("/")[-1].split("_") if all(ni not in i for ni in ["task-","run-"])])
+    cmd = "fslmerge -t "+concat_filename
 
     for task in app_options["task-list"]:
         app_options["task"] = task
@@ -955,11 +958,11 @@ def concat_fmri(gear_options: dict, app_options: dict, gear_context: GearToolkit
     execute_shell(cmd, dryrun=False, cwd=app_options["work-dir"])
 
     # set new total fmri dims
-    app_options["func_file"] = os.path.join(app_options["work-dir"], "concat_fmri.nii.gz")
+    app_options["func_file"] = os.path.join(app_options["work-dir"], concat_filename)
     app_options["nvols"] = nb.load(app_options["func_file"]).shape[3]
     app_options["trs"] = nb.load(app_options["func_file"]).header["pixdim"][4]
 
-    return os.path.join(app_options["work-dir"], "concat_fmri.nii.gz")
+    return os.path.join(app_options["work-dir"], concat_filename)
 
 
 def concat_events(gear_options: dict, app_options: dict, gear_context: GearToolkitContext):
