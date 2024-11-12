@@ -16,7 +16,7 @@ classifiers = [
 
 [tool.poetry.dependencies]
 python = "^3.8.10"
-flywheel-gear-toolkit = "^0.6.14"
+flywheel-gear-toolkit = {version = "^0.6.17", extras = ["sdk"]}
 flywheel-sdk = "^17.5.0"
 psutil = "^5.9.0"
 beautifulsoup4 = "^4.11.1"

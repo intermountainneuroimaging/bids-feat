@@ -7,11 +7,24 @@ import logging
 from fw_gear_bids_feat.support_functions import execute_shell
 import errorhandler
 import re
+from pathlib import Path
+from utils.bids.download_run_level import download_bids_for_runlevel
+from utils.bids.run_level import get_analysis_run_level_and_hierarchy
 
 log = logging.getLogger(__name__)
 
 # Track if message gets logged with severity of error or greater
 error_handler = errorhandler.ErrorHandler()
+
+# when downloading BIDS Limit download to specific folders
+DOWNLOAD_MODALITIES = ["anat", "func", "fmap", "dwi"]  # empty list is no limit
+
+# Whether or not to include src data (e.g. dicoms) when downloading BIDS
+DOWNLOAD_SOURCE = False
+
+GEAR = "bids-feat"
+REPO = "flywheel-apps"
+CONTAINER = Path(REPO).joinpath(GEAR)
 
 
 def parse_config(
@@ -34,7 +47,6 @@ def parse_config(
         "client": gear_context.client,
         "environ": os.environ,
         "debug": gear_context.config.get("debug"),
-        "preproc_zipfile": gear_context.get_input_path("preprocessing-pipeline-zip"),
         "FSF_TEMPLATE": gear_context.get_input_path("FSF_TEMPLATE")
     }
 
@@ -92,23 +104,51 @@ def parse_config(
     else:
         app_options["events-in-inputs"] = False  # look for events in flywheel acquisition
 
-    # log filepaths
-    log.info("Inputs file path, %s", gear_options["preproc_zipfile"])
-    if app_options["additional_input"]:
-        log.info("Additional inputs file path, %s", gear_options["additional_input_zip"])
-
     # pull config settings
     gear_options["feat"] = {
         "common_command": "feat",
         "params": ""
     }
 
-    # unzip input files
-    unzip_inputs(gear_options, gear_options["preproc_zipfile"])
 
+    if gear_context.get_input_path("preprocessing-pipeline-zip"):
+        # unzip input files
+        gear_options["preproc_zipfile"] = gear_context.get_input_path("preprocessing-pipeline-zip")
+        log.info("Inputs file path, %s", gear_options["preproc_zipfile"])
+        unzip_inputs(gear_options, gear_options["preproc_zipfile"])
+
+    else:
+        # Given the destination container, figure out if running at the project,
+        # subject, or session level.
+        destination_id = gear_context.destination["id"]
+        hierarchy = get_analysis_run_level_and_hierarchy(gear_context.client, destination_id)
+        gear_name = gear_context.manifest["name"]
+        config = gear_context.config
+        # Create HTML file that shows BIDS "Tree" like output
+        tree = True
+        tree_title = f"{gear_name} BIDS Tree"
+
+        error_code = download_bids_for_runlevel(
+            gear_context,
+            hierarchy,
+            tree=tree,
+            tree_title=tree_title,
+            src_data=DOWNLOAD_SOURCE,
+            folders=DOWNLOAD_MODALITIES,
+            dry_run=gear_options["dry-run"],
+            do_validate_bids=config.get("gear-run-bids-validation"),
+        )
+        if error_code > 0 and not config.get("gear-ignore-bids-errors"):
+            errors.append(f"BIDS Error(s) detected.  Did not run {CONTAINER}")
+
+        app_options["pipeline"] = "bids"
+
+    # unzip input files
     if app_options["additional_input"]:
         unzip_inputs(gear_options, gear_options["additional_input_zip"])
+        log.info("Additional inputs file path, %s", gear_options["additional_input_zip"])
 
+    ## TASKS FOR ANALYSIS -- ALLOW MULTIPLE ##
     # if task-list is a comma seperated list, apply nifti concatenation for analysis
     if "," in app_options["task-list"]:
         app_options["task-list"] = app_options["task-list"].replace(" ", "").split(",")
@@ -121,8 +161,8 @@ def parse_config(
     subject = gear_context.client.get(destination.parents.subject)
     session = gear_context.client.get(destination.parents.session)
 
-    app_options["sid"] = subject.label
-    app_options["sesid"] = session.label
+    app_options["sid"] = subject.label.replace("sub-","")
+    app_options["sesid"] = session.label.replace("ses-","")
 
     # check if tasks are exact match to existing acquisitions, or look for wildcard match
     final_task_list = []

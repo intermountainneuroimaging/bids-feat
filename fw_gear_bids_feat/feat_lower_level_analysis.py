@@ -177,6 +177,10 @@ def run(gear_options: dict, app_options: dict, gear_context: GearToolkitContext)
                 space = [s for s in app_options["func_file"].split("_") if "space" in s][0]
                 add_dummy_reg(featdir,space)
 
+            # make special condition for bids pipeline
+            if app_options["pipeline"] == "bids":
+                app_options["pipeline"] = "bids/derivatives"
+
             # Create output directory
             output_analysis_id_dir = os.path.join(gear_options["destination-id"], app_options["pipeline"], "feat",
                                                   "sub-" + app_options["sid"], "ses-" + app_options["sesid"])
@@ -444,7 +448,7 @@ def generate_ev_files(gear_options: dict, app_options: dict):
 
             filename = os.path.join(outpath,
                                     os.path.basename(app_options["event-file"]).replace(".tsv", "-" + g + ".txt"))
-            ev1.to_csv(filename, sep=" ", index=False, header=False)
+            ev1.to_csv(filename, sep=" ", index=False, columns=["onset","duration","weight"], header=False)
 
             app_options["event_dir"] = outpath
 
@@ -479,21 +483,22 @@ def identify_feat_paths(gear_options: dict, app_options: dict):
         return
 
     # apply filemapper to each file pattern and store
-    if os.path.isdir(os.path.join(gear_options["work-dir"], "fmriprep")):
-        pipeline = "fmriprep"
-    elif os.path.isdir(os.path.join(gear_options["work-dir"], "bids-hcp")):
-        pipeline = "bids-hcp"
-    elif len(os.walk(gear_options["work-dir"]).next()[1]) == 1:
-        pipeline = os.walk(gear_options["work-dir"]).next()[1]
-    else:
-        log.error("Unable to interpret pipeline for analysis. Contact gear maintainer for more details.")
-    app_options["pipeline"] = pipeline
+    if "pipeline" not in app_options:
+        if os.path.isdir(os.path.join(gear_options["work-dir"], "fmriprep")):
+            pipeline = "fmriprep"
+        elif os.path.isdir(os.path.join(gear_options["work-dir"], "bids-hcp")):
+            pipeline = "bids-hcp"
+        elif len(os.walk(gear_options["work-dir"]).next()[1]) == 1:
+            pipeline = os.walk(gear_options["work-dir"]).next()[1]
+        else:
+            log.error("Unable to interpret pipeline for analysis. Contact gear maintainer for more details.")
+        app_options["pipeline"] = pipeline
 
-    lookup_table = {"WORKDIR": str(gear_options["work-dir"]), "PIPELINE": pipeline, "SUBJECT": app_options["sid"],
+    lookup_table = {"WORKDIR": str(gear_options["work-dir"]), "PIPELINE": app_options["pipeline"], "SUBJECT": app_options["sid"],
                     "SESSION": app_options["sesid"], "TASK": app_options["task"]}
 
     # special exception - fmriprep produces non-zeropaded run numbers - fix this only for applying lookup table here
-    if pipeline == "fmriprep":
+    if app_options["pipeline"] == "fmriprep":
         # zero padding only relevent for versions less than v23
         if "preproc_gear" in gear_options:
             # check the version
@@ -683,7 +688,7 @@ def generate_design_file(gear_options: dict, app_options: dict):
     # if highres is passed, include it here
     if app_options["highres_file"]:
         replace_line(design_file, r'set highres_files\(1\)',
-                     'set feat_files(1) "' + app_options["highres_file"] + '"')
+                     'set highres_files(1) "' + app_options["highres_file"] + '"')
 
     # # check confounds parser consistency...
     # confound_yn = locate_by_pattern(design_file, r'set fmri\(confoundevs\) (.*)')
