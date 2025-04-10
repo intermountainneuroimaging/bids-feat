@@ -13,6 +13,8 @@ from zipfile import ZIP_DEFLATED, ZipFile
 import errorhandler
 import nibabel as nb
 from flywheel_gear_toolkit import GearToolkitContext
+from nipype.interfaces.fsl.maths import ApplyMask
+from nipype.interfaces.fsl import BET
 
 from utils.command_line import exec_command
 from utils.feat_html_singlefile import main as flathtml
@@ -64,6 +66,9 @@ def run(gear_options: dict, app_options: dict, gear_context: GearToolkitContext)
                 log.critical('Failure: exiting with code 1 due to logged errors')
                 run_error = 1
                 return run_error
+
+            # If registration is applied... make sure the "T1w" and "T1w_brain" are used...
+            prepare_registration_files(gear_options, app_options)
 
             # assign number of dummy scans (or none)
             app_options = identify_dummyvols(gear_options, app_options, gear_context)
@@ -174,8 +179,11 @@ def run(gear_options: dict, app_options: dict, gear_context: GearToolkitContext)
 
             # if registration was skipped, add dummy registration
             if not app_options["highres_file"] or app_options["mumford_reg"]:
-                space = [s for s in app_options["func_file"].split("_") if "space" in s][0]
-                add_dummy_reg(featdir,space)
+                try:
+                    space = [s for s in app_options["func_file"].split("_") if "space" in s][0]
+                    add_dummy_reg(featdir,space)
+                except:
+                    log.warning('Looks like this analysis was run in subject space AND no registration is applied... Inference across subjects is not possible.')
 
             # make special condition for bids pipeline
             if app_options["pipeline"] == "bids":
@@ -220,6 +228,181 @@ def run(gear_options: dict, app_options: dict, gear_context: GearToolkitContext)
         shutil.copy(app_options["design_file"], os.path.join(gear_options["output-dir"], "design.fsf"))
 
     return run_error
+
+
+def prepare_registration_files(gear_options: dict, app_options: dict):
+    """
+    Check for consistency of user configuration settings and template options. Define stages to run based on user input.
+
+    Args:
+        gear_options (dict): options for the gear, from config.json
+        app_options (dict): options for the app, from config.json
+
+    Returns:
+        app_options (dict): updated options for the app, from config.json
+    """
+
+    design_file = gear_options["FSF_TEMPLATE"]
+
+    # TODO check registration consistency
+    # 1. check if registration should be applied...
+    reghighres_yn = locate_by_pattern(design_file, r'set fmri\(reghighres_yn\) (.*)')
+    regstandard_yn = locate_by_pattern(design_file, r'set fmri\(regstandard_yn\) (.*)')
+    regstandard_nonlinear_yn = locate_by_pattern(design_file, r'set fmri\(regstandard_nonlinear_yn\) (.*)')
+
+    if int(reghighres_yn[0]) == 0 and int(regstandard_yn[0]) == 0 and int(regstandard_nonlinear_yn[0]) == 0:
+        # no registration will be applied - use mumford workaround after feat run
+        app_options["mumford_reg"] = True
+        return
+    else:
+        app_options["mumford_reg"] = False
+
+    if not os.path.exists(app_options["highres_file"]):
+        log.error("No file found matching high resolution input")
+
+    # 2. If registration should be applied, make sure highres image is brain extracted... assume from bids naming
+    bids_obj = get_bids_parts(app_options["highres_file"])
+
+    if bids_obj["Modality"] == "T1w" and bids_obj["Desc"] == "brain":
+        # do nothing! we have the file we need
+        pass
+    elif bids_obj["Modality"] == "T1w" and bids_obj["Desc"] == "preproc":
+
+        # brain extracted image not passed... look for it...
+        new_obj = bids_obj.copy()
+        new_obj["Desc"] = "brain"
+        new_obj["Modality"] = "mask"
+        bids_mask = get_bids_parts(new_obj)
+        mask_file_path = os.path.join(os.path.dirname(app_options["highres_file"]), bids_mask["Filename"])
+
+        new_obj = bids_obj.copy()
+        new_obj["Desc"] = "brain"
+        new_obj["Modality"] = "T1w"
+        bids_mask = get_bids_parts(new_obj)
+        brain_file_path = os.path.join(os.path.dirname(app_options["highres_file"]), bids_mask["Filename"])
+
+        # go look for new file...
+        if os.path.exists(mask_file_path):
+            # apply masking...
+            # do stuff!
+            mask = ApplyMask()
+            mask.inputs.in_file = app_options["highres_file"]
+            mask.inputs.mask_file = mask_file_path
+            mask.inputs.out_file = brain_file_path
+            log.info(mask.cmdline)
+            out = mask.run()
+
+        else:
+            # create a brain mask then apply... give warning to user!
+            # do stuff!
+            bet_interface = BET()
+            bet_interface.inputs.in_file = app_options["highres_file"]
+            bet_interface.inputs.out_file = brain_file_path
+            bet_interface.inputs.frac = 0.7
+            bet_interface.inputs.mask = False
+            bet_interface.inputs.robust = True
+            log.info(bet_interface.cmdline)
+            result = bet_interface.run()
+
+        # store final highres file (brain only)
+        app_options["highres_file"] = brain_file_path
+
+    else:
+        # not sure how to proceed. Log an error and exit
+        log.critical("High Resolution structural image does not match any known templates... Unable to proceed. ")
+
+    # this is a special case where the t1w head and t1w brain need to be named specifically for the program to "find" them
+    if int(regstandard_nonlinear_yn[0]) == 1:
+        # infer if highres file is brain extracted...
+        brain_file_path = app_options["highres_file"]
+
+        # symlink to a filename "T1w_brain.nii.gz"
+
+        # get the full head image
+        bids_obj = get_bids_parts(app_options["highres_file"])
+        bids_obj["Desc"] = "preproc"
+        bids_obj["Modality"] = "T1w"
+        new_obj = get_bids_parts(bids_obj)
+        head_file_path = os.path.join(os.path.dirname(app_options["highres_file"]), new_obj["Filename"])
+
+        cwd = os.getcwd()
+        try:
+            os.chdir(os.path.dirname(brain_file_path))
+            os.symlink(os.path.basename(brain_file_path),"T1w_brain.nii.gz")
+            os.symlink(os.path.basename(head_file_path), "T1w.nii.gz")
+            # symlink to filename "T1w.nii.gz"
+        except Exception as e:
+            os.chdir(cwd)
+            raise(e)
+
+        #finally...use the new symlinked files for the design template
+        app_options["highres_file"] = os.path.join(os.path.dirname(app_options["highres_file"]), "T1w_brain.nii.gz")
+
+    return
+
+
+def get_extension(filename):
+    "return file and file extension, use special formats common in fmi / fmriprep"
+
+    custom_extensions = [".nii.gz", ".nii", ".dicom", ".tsv", ".csv", ".h5", ".surf.gii", ".txt", ".json"]
+    pattern = r"^(.*)({})$".format("|".join(re.escape(ext) for ext in custom_extensions))
+    match = re.match(pattern, filename)
+    if match:
+        basename, ext = match.groups()
+        return basename, ext
+
+
+def get_bids_parts(variable):
+
+    # if method 1: take filename and interpret bids parts
+    if isinstance(variable, str) or isinstance(variable, Path):
+        filename = variable
+
+    # if method 2: take bids_object already created and modify filename
+    elif isinstance(variable, dict):
+        bids_obj = variable
+        name, ext = get_extension(bids_obj["Filename"])
+    else:
+        log.error("Unable to parse input to get_bids_parts")
+        return
+
+    if "filename" in locals():
+        name, ext = get_extension(os.path.basename(filename))
+        folder = Path(filename).parts[-2]
+        res = dict(map(str.strip, sub.split('-', 1))
+                   for sub in name.split('_') if '-' in sub)
+        subject = res.get('sub')
+        session = res.get('ses')
+        bids_obj = {
+            'Sub': subject,
+            'Ses': session,
+            'Task': res.get('task'),
+            'Acq': res.get('acq'),
+            'Ce': res.get('ce'),
+            'Rec': res.get('rec'),
+            'Dir': res.get('dir'),
+            'Run': res.get('run'),
+            'Recording': res.get('recording'),
+            'Space':res.get('space'),
+            'Desc': res.get('desc'),
+            'Label': res.get('label'),
+            'Hemi': res.get('hemi'),
+            'Den': res.get('den'),
+            'error_message': None,
+            'Filename': None,
+            'Folder': folder,
+            'ignore': False,
+            'Modality': name.split("_")[-1],
+            'Part': None,
+            'Path': f'sub-{subject}/ses-{session}/{folder}',
+            'valid': True
+        }
+
+    bids_obj["Filename"] = result = '_'.join(f'{key.lower()}-{value}' for key, value in bids_obj.items() if
+                                             key in ["Sub", "Ses", "Acq", "Ce", "Dir", "Rec", "Run", "Task",
+                                                     "Recording", "Space", "Desc", "Label", "Hemi", "Den"] and value) + "_" + bids_obj["Modality"] + ext
+    return bids_obj
+
 
 
 def identify_dummyvols(gear_options: dict, app_options: dict, gear_context: GearToolkitContext):
@@ -521,6 +704,7 @@ def identify_feat_paths(gear_options: dict, app_options: dict):
 
     # check if higres structural registration is set to True
     highres_yn = locate_by_pattern(design_file, r'set fmri\(reghighres_yn\) (.*)')
+    altref_yn = locate_by_pattern(design_file, r'set fmri\(alternateReference_yn\) (.*)')
 
     if int(highres_yn[0]):
         highres_file_name = locate_by_pattern(design_file, r'set highres_files\(1\) "(.*)"')
@@ -532,6 +716,17 @@ def identify_feat_paths(gear_options: dict, app_options: dict):
             log.info("Using highres file: %s", app_options["highres_file"])
     else:
         log.info("Skipping highres registration.")
+
+    if int(altref_yn[0]) and int(highres_yn[0]):
+        altref_file_name = locate_by_pattern(design_file, r'set alt_ex_func\(1\) "(.*)"')
+        app_options["altref_file"] = apply_lookup(altref_file_name[0], lookup_table)
+
+        if not searchfiles(app_options["altref_file"]):
+            log.error("Unable to locate altref file...exiting.")
+        else:
+            log.info("Using altref file: %s", app_options["altref_file"])
+    else:
+        log.info("Skipping alternative reference (SBRef) registration.")
 
     # check if confounds file is defined in model
     confound_yn = locate_by_pattern(design_file, r'set fmri\(confoundevs\) (.*)')
@@ -689,6 +884,11 @@ def generate_design_file(gear_options: dict, app_options: dict):
     if app_options["highres_file"]:
         replace_line(design_file, r'set highres_files\(1\)',
                      'set highres_files(1) "' + app_options["highres_file"] + '"')
+
+    # if altref is passed, include it here
+    if app_options["altref_file"]:
+        replace_line(design_file, r'set alt_ex_func\(1\)',
+                     'set alt_ex_func(1) "' + app_options["altref_file"] + '"')
 
     # # check confounds parser consistency...
     # confound_yn = locate_by_pattern(design_file, r'set fmri\(confoundevs\) (.*)')
