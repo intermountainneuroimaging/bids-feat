@@ -128,7 +128,8 @@ def run(gear_options: dict, app_options: dict, gear_context: GearToolkitContext)
         app_options["concat-file"] = concat_fmri(gear_options, app_options, gear_context)
 
         # 2. concatenate all confound files
-        concat_confounds(gear_options, app_options, gear_context)
+        if app_options["confounds_file"]:
+            concat_confounds(gear_options, app_options, gear_context)
 
         # 3. concatenate all event files
         concat_events(gear_options, app_options, gear_context)
@@ -619,6 +620,9 @@ def generate_ev_files(gear_options: dict, app_options: dict):
 
         df = pd.read_csv(app_options["event-file"], sep="\t")
 
+        # look for empty weight values
+        df.fillna(value=1, inplace=True)
+
         groups = df["trial_type"].unique()
 
         for g in groups:
@@ -828,9 +832,9 @@ def template_checks(gear_options: dict, app_options: dict, gear_context):
     elif app_options["DropNonSteadyStateMethod"] == "regressor" and app_options["DropNonSteadyState"]:
         app_options["include_confounds"] = True
 
-    # case 4: multirun mode adds run regress at minimum
-    elif app_options["multirun"]:
-        app_options["include_confounds"] = True
+    # # case 4: multirun mode adds run regress at minimum
+    # elif app_options["multirun"]:
+    #     app_options["include_confounds"] = True
 
     # otherwise skip over confounds of no interest
     else:
@@ -1065,21 +1069,12 @@ def concat_confounds(gear_options: dict, app_options: dict, gear_context: GearTo
             log.info("Using confounds spreadsheet: %s", str(app_options["confounds_file"]))
             data = pd.read_csv(app_options["confounds_file"], sep='\t')
 
-        # get run regressor
-        nvols = nb.load(app_options["func_file"]).shape[3]
-        arr = np.zeros([nvols, 1])
-        arr[:, 0] = 1
-        cols = ["runid"]
-        df1 = pd.DataFrame(arr, columns=cols)
-        data = pd.concat([data, df1], axis=1)
-
         if app_options['confound-list']:
 
             confounds_df = pd.DataFrame()
 
             # pull relevant columns for feat
             colnames = app_options['confound-list'].replace(" ", "").split(",")
-            colnames.extend(cols)
 
             for cc in colnames:
 
@@ -1176,6 +1171,43 @@ def concat_fmri(gear_options: dict, app_options: dict, gear_context: GearToolkit
     return os.path.join(app_options["work-dir"], concat_filename)
 
 
+def run_regressor(gear_options: dict, app_options: dict, gear_context: GearToolkitContext):
+    """
+    Build run regressors in 3-Column format.
+    """
+
+    log.info("Building run regressors...")
+
+    totaltime = 0
+    totaltrs = 0
+    n = 0
+
+    events = pd.DataFrame()
+    for task in app_options["task-list"]:
+        app_options["task"] = task
+        n += 1
+
+        # locate the feat files for each task...
+        find_feat_file(gear_options, app_options)
+
+        # identify starting tr and shape
+        nvols = nb.load(app_options["func_file"]).shape[3]
+        tr = nb.load(app_options["func_file"]).header["pixdim"][4]
+
+        # identify dummy volume count
+        dummyvols = fetch_dummy_volumes(app_options["task"], gear_context)
+
+        df = pd.DataFrame({"onset": totaltime, "duration": (nvols-dummyvols)*tr, "trial_type": "run-"+str(n).zfill(2), "weight": 1}, index = [0])
+
+        # next iteration startime
+        totaltrs = totaltrs + nvols - dummyvols
+        totaltime = totaltrs * tr
+        events = pd.concat([events, df], axis=0)
+
+    events = events.sort_values(by=['onset'])
+    return events
+
+
 def concat_events(gear_options: dict, app_options: dict, gear_context: GearToolkitContext):
     """
     Build a concatenated events file. Use task level preprocessed input files
@@ -1235,9 +1267,14 @@ def concat_events(gear_options: dict, app_options: dict, gear_context: GearToolk
 
     events = events.sort_values(by=['onset'])
 
+
+    # add all the run regressors
+    df = run_regressor(gear_options, app_options, gear_context)
+    events = pd.concat([events, df], axis=0)
+
     app_options["event-file"] = os.path.join(app_options["funcpath"], "concat-events.tsv")
 
-    events.to_csv(app_options["event-file"], sep='\t', header=True, index=False)
+    events.to_csv(app_options["event-file"], sep='\t', header=True, index=False, float_format='%.2f')
     app_options["task"] = "concat"
 
     # generate all tasks after concatenating - easier than doing it for each text file separately
