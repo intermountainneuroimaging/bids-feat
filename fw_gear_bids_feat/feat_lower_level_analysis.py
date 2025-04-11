@@ -655,6 +655,7 @@ def identify_feat_paths(gear_options: dict, app_options: dict):
 
     app_options["func_file"] = None
     app_options["highres_file"] = None
+    app_options["altref_file"] = None
 
     design_file = gear_options["FSF_TEMPLATE"]
 
@@ -851,8 +852,13 @@ def generate_design_file(gear_options: dict, app_options: dict):
         app_options (dict): updated options for the app, from config.json
     """
 
-    design_file = os.path.join(gear_options["work-dir"],
-                               app_options["task"] + "." + os.path.basename(gear_options["FSF_TEMPLATE"]))
+    # don't duplicate task name in fsf template (nuiscance for custom design files)
+    if app_options["task"] in os.path.basename(gear_options["FSF_TEMPLATE"]):
+        design_file = os.path.join(gear_options["work-dir"], os.path.basename(gear_options["FSF_TEMPLATE"]))
+    else:
+        design_file = os.path.join(gear_options["work-dir"],
+                                   app_options["task"] + "." + os.path.basename(gear_options["FSF_TEMPLATE"]))
+
     app_options["design_file"] = design_file
 
     shutil.copy(gear_options["FSF_TEMPLATE"], design_file)
@@ -881,12 +887,12 @@ def generate_design_file(gear_options: dict, app_options: dict):
     replace_line(design_file, r'set fmri\(regstandard\) ', 'set fmri(regstandard) "' + stdname + '"')
 
     # if highres is passed, include it here
-    if app_options["highres_file"]:
+    if "highres_file" in app_options and app_options["highres_file"]:
         replace_line(design_file, r'set highres_files\(1\)',
                      'set highres_files(1) "' + app_options["highres_file"] + '"')
 
     # if altref is passed, include it here
-    if app_options["altref_file"]:
+    if "altref_file" in app_options and app_options["altref_file"]:
         replace_line(design_file, r'set alt_ex_func\(1\)',
                      'set alt_ex_func(1) "' + app_options["altref_file"] + '"')
 
