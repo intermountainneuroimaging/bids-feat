@@ -175,6 +175,10 @@ def parse_config(
             final_task_list.append(regex_col)
 
     final_task_list = sorted(set(final_task_list))
+
+    if not final_task_list:
+        raise Exception("Unable to locate matching task for analysis...quitting.")
+
     app_options["task-list"] = [s.replace("func-bold_task-", "") for s in final_task_list]
 
     return gear_options, app_options

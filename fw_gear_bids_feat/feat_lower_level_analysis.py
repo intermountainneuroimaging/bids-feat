@@ -417,7 +417,7 @@ def identify_dummyvols(gear_options: dict, app_options: dict, gear_context: Gear
         app_options (dict): updated options for the app, from config.json
     """
     # identify if dummy scans should be included
-    app_options['AcqDummyVolumes'] = fetch_dummy_volumes(app_options["task"], gear_context)
+    app_options['AcqDummyVolumes'] = fetch_dummy_volumes("func-bold_task-" + app_options["task"], gear_context)
 
     # get volume count from functional path
     cmd = "fslnvols " + app_options["func_file"]
@@ -507,7 +507,7 @@ def generate_confounds_file(gear_options: dict, app_options: dict, gear_context:
         all_confounds_df.to_csv(
             os.path.join(app_options["funcpath"], 'feat-confounds_' + app_options["task"] + '.txt'),
             header=False, index=False,
-            sep=" ", na_rep=0)
+            sep=" ", na_rep=0, float_format='{:f}'.format)
         app_options["feat_confounds_file"] = os.path.join(app_options["funcpath"],
                                                           'feat-confounds_' + app_options["task"] + '.txt')
     else:
@@ -531,7 +531,7 @@ def download_event_files(gear_options: dict, app_options: dict, gear_context: Ge
 
     """
 
-    taskname = app_options["task"]
+    taskname = "func-bold_task-" + app_options["task"]
     acq, nii = metadata.find_matching_acq(taskname, gear_context)
 
     counter = 0

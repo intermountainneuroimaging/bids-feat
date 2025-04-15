@@ -157,7 +157,7 @@ def replace_line(filename, pattern, repl):
         with open(filename) as src_file:
             for line in src_file:
                 if re.findall(pattern_compiled, line):
-                    tmp_file.write(repl)
+                    tmp_file.write(repl+"\n")
                 else:
                     tmp_file.write(line)
 
