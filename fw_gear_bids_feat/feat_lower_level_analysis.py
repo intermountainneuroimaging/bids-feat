@@ -283,7 +283,7 @@ def prepare_registration_files(gear_options: dict, app_options: dict):
         brain_file_path = os.path.join(os.path.dirname(app_options["highres_file"]), bids_mask["Filename"])
 
         # go look for new file...
-        if os.path.exists(mask_file_path):
+        if os.path.exists(mask_file_path) and not os.path.exists(brain_file_path):
             # apply masking...
             # do stuff!
             mask = ApplyMask()
@@ -292,6 +292,10 @@ def prepare_registration_files(gear_options: dict, app_options: dict):
             mask.inputs.out_file = brain_file_path
             log.info(mask.cmdline)
             out = mask.run()
+
+        elif os.path.exists(brain_file_path):
+            # skip this step
+            pass
 
         else:
             # create a brain mask then apply... give warning to user!
@@ -329,8 +333,10 @@ def prepare_registration_files(gear_options: dict, app_options: dict):
         cwd = os.getcwd()
         try:
             os.chdir(os.path.dirname(brain_file_path))
-            os.symlink(os.path.basename(brain_file_path),"T1w_brain.nii.gz")
-            os.symlink(os.path.basename(head_file_path), "T1w.nii.gz")
+            if not os.path.exists("T1w_brain.nii.gz"):
+                os.symlink(os.path.basename(brain_file_path), "T1w_brain.nii.gz")
+            if not os.path.exists("T1w.nii.gz"):
+                os.symlink(os.path.basename(head_file_path), "T1w.nii.gz")
             # symlink to filename "T1w.nii.gz"
         except Exception as e:
             os.chdir(cwd)

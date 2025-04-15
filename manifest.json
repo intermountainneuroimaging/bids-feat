@@ -152,7 +152,7 @@
         },
         "gear-builder": {
             "category": "analysis",
-            "image": "amhe4269/bids-feat:6.0.4_inc0.8.4"
+            "image": "amhe4269/bids-feat:6.0.4_inc0.8.4rc1"
         },
         "license": "Apache-2.0"
     },
