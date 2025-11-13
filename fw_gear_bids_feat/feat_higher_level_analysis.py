@@ -19,8 +19,6 @@ log = logging.getLogger(__name__)
 # Track if message gets logged with severity of error or greater
 error_handler = errorhandler.ErrorHandler()
 
-
-
 def run(gear_options: dict, app_options: dict, gear_context: GearToolkitContext) -> int:
     """Run module for higher level analysis run option
 
@@ -39,6 +37,9 @@ def run(gear_options: dict, app_options: dict, gear_context: GearToolkitContext)
     # 4. cleanup and zip
 
     commands = []
+
+    # start from working directory for all commands...
+    os.chdir(gear_options["work-dir"])
 
     # generate filepaths for feat run (need this for other setup steps)
     identify_feat_paths(gear_options, app_options)

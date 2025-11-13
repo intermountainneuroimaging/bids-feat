@@ -167,6 +167,61 @@ While this gear is written to act only on a single session using a single design
 
 If the user wishes to **concatenate** multiple runs into a single time series before first level analysis, this can also be achieved by setting `multirun` configuration to `true`. If a user wishes to use the `multirun` option, they **must** pass the events file as an external input to the gear where the concatenated events are time adjusted and correctly labeled for each run. The input nifti timeseries and confounds file will be generated automatically with the flywheel gear.
 
+## Concatenated Runs
+This gear allow multiple acquisitions to be run as individual GLM analyses or concatenated and computed together. Concatenated acquisitons have the following features: (1)  fMRI timeseries is trimmed to remove non-steady-state volumes, (2) 4D Grand Mean is applied for each acquisition, (3) confound files are vertically stacked (and trimmed as needed), (4) event timing is adjusted to match trimmed timeseries, (5) run regressors are made available as additional event timing files. IMPORTANT! Users must include a 3-Column format regressor in the model for each run labeled: run-01, run-02, run-03
+
+```
+# EV 2 title
+set fmri(evtitle2) "run-01"
+
+# Basic waveform shape (EV 2)
+# 0 : Square
+# 1 : Sinusoid
+# 2 : Custom (1 entry per volume)
+# 3 : Custom (3 column format)
+# 4 : Interaction
+# 10 : Empty (all zeros)
+set fmri(shape2) 3
+
+# Convolution (EV 2)
+# 0 : None
+# 1 : Gaussian
+# 2 : Gamma
+# 3 : Double-Gamma HRF
+# 4 : Gamma basis functions
+# 5 : Sine basis functions
+# 6 : FIR basis functions
+# 8 : Alternate Double-Gamma
+set fmri(convolve2) 0
+
+...
+
+# EV 3 title
+set fmri(evtitle3) "run-02"
+
+# Basic waveform shape (EV 3)
+# 0 : Square
+# 1 : Sinusoid
+# 2 : Custom (1 entry per volume)
+# 3 : Custom (3 column format)
+# 4 : Interaction
+# 10 : Empty (all zeros)
+set fmri(shape3) 3
+
+# Convolution (EV 3)
+# 0 : None
+# 1 : Gaussian
+# 2 : Gamma
+# 3 : Double-Gamma HRF
+# 4 : Gamma basis functions
+# 5 : Sine basis functions
+# 6 : FIR basis functions
+# 8 : Alternate Double-Gamma
+set fmri(convolve3) 0
+
+...
+```
+
 ## Troubleshooting
 
 Use `gear-dry-run` to generate all the necessary inputs and design file but do not run the analysis. Check the design file contains all relevant inputs and settings. Test the design file locally by changing or removing the absolute file path in the design file. Watch for FEAT errors in the report.

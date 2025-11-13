@@ -47,7 +47,8 @@ def parse_config(
         "client": gear_context.client,
         "environ": os.environ,
         "debug": gear_context.config.get("debug"),
-        "FSF_TEMPLATE": gear_context.get_input_path("FSF_TEMPLATE")
+        "FSF_TEMPLATE": gear_context.get_input_path("FSF_TEMPLATE"),
+        "upload-method": gear_context.config.get("upload-method")
     }
 
     # set the output dir name for the BIDS app:
@@ -175,6 +176,10 @@ def parse_config(
             final_task_list.append(regex_col)
 
     final_task_list = sorted(set(final_task_list))
+
+    if not final_task_list and app_options["run-level"] == "First Level Analysis":
+        raise Exception("Unable to locate matching task for analysis...quitting.")
+
     app_options["task-list"] = [s.replace("func-bold_task-", "") for s in final_task_list]
 
     return gear_options, app_options

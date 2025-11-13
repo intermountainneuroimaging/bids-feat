@@ -1,6 +1,9 @@
 """Main module."""
 
 import logging
+import os
+import glob
+import time
 from pathlib import Path
 import errorhandler
 from typing import List, Tuple
@@ -88,5 +91,28 @@ def run(gear_options: dict, app_options: dict, gear_context: GearToolkitContext)
 
         # run!
         feat_higher_level_analysis.run(gear_options, app_options, gear_context)
+
+    #
+    # Select an option to upload via sdk
+    fw = gear_options["client"]
+    analysis = fw.get(gear_options["destination-id"])
+
+    if gear_options["upload-method"] == "sdk":
+        os.environ["FLYWHEEL_SDK_REQUEST_TIMEOUT"] = "600"
+        for source_path in glob.glob(os.path.join(gear_options["output-dir"],"*")):
+            log.info(f"uploading using sdk: {source_path}")
+            analysis.upload_file(source_path)
+
+        # reload analysis object after a brief pause
+        time.sleep(60)
+        analysis = fw.get(gear_options["destination-id"])
+        # check that all files were uploaded...
+        for source_path in glob.glob(os.path.join(gear_options["output-dir"],"*")):
+            try:
+                if analysis.get_file(os.path.basename(source_path)):
+                    os.remove(source_path)
+            except Exception as e:
+                log.warning(e)
+
 
 

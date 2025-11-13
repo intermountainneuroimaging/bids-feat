@@ -46,6 +46,6 @@ def find_matching_acq(bids_name, context):
         full_acq = fw.get_acquisition(acq.id)
         if ("func-bold" in acq.label) and (bids_name in acq.label) and ("sbref" not in acq.label.lower()) and ("ignore-BIDS" not in acq.label):
             for f in full_acq.files:
-                if bids_name in f.info.get("BIDS").get("Filename") and "nii" in f.name:
+                if bids_name.replace("func-bold_task-","") in f.info.get("BIDS").get("Filename") and "nii" in f.name:
                     return full_acq, f
 
