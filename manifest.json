@@ -88,18 +88,27 @@
           "description": "Do everything except actually executing gear",
           "type": "boolean"
       },
+      "upload-method": {
+        "default": "gear",
+        "description": "Method used to upload gear outputs to analysis container in flywheel.",
+        "type": "string",
+        "enum": [
+          "gear",
+          "sdk"
+        ]
+      },
       "gear-writable-dir": {
-          "default": "/pl/active/ics/fw_temp_data",
+          "default": "/flywheel/v0/work",
           "description": "Gears expect to be able to write temporary files in /flywheel/v0/.  If this location is not writable (such as when running in Singularity), this path will be used instead.  fMRIPrep creates a large number of files so this disk space should be fast and local.",
           "type": "string"
       },
       "slurm-cpu": {
-          "default": "2",
+          "default": "8",
           "description": "[SLURM] How many cpu-cores to request per command/task. This is used for the underlying '--cpus-per-task' option. If not running on HPC, then this flag is ignored",
           "type": "string"
       },
       "slurm-ram": {
-          "default": "16G",
+          "default": "4G",
           "description": "[SLURM] How much RAM to request. This is used for the underlying '--mem-per-cpu' option. If not running on HPC, then this flag is ignored",
           "type": "string"
       },
@@ -114,17 +123,17 @@
           "type": "string"
       },
       "slurm-partition": {
-          "default": "blanca-ics",
+          "default": "amilan",
           "description": "[SLURM] Blanca, Alpine, or Summit partitions can be entered",
           "type": "string"
       },
       "slurm-qos": {
-          "default": "blanca-ics",
+          "default": "normal",
           "description": "[SLURM] For Blanca the QOS has a different meaning, ie blanca-ics vs blanca-ibg, etc. For Alpine and Summit, the QOS should be set to normal if running a job for 1 day or less, and set to long if running a job with a maximum walltime of 7 days",
           "type": "string"
       },
       "slurm-account": {
-          "default": "blanca-ics",
+          "default": "ucb-general",
           "description": "[SLURM] For Blanca the ACCOUNT should be set to the sub-account of choice (e.g. blanca-ics-rray). For Alpine, the account should be set to ucb-general, or the specialized account granted by RC: ucb278_asc1",
           "type": "string"
       },
@@ -152,7 +161,7 @@
         },
         "gear-builder": {
             "category": "analysis",
-            "image": "amhe4269/bids-feat:6.0.4_inc0.8.5"
+            "image": "amhe4269/bids-feat:6.0.4_inc0.8.7"
         },
         "license": "Apache-2.0"
     },
@@ -217,5 +226,5 @@
     "name": "bids-feat",
     "source": "https://github.com/intermountainneuroimaging/bids-feat",
     "url": "http://fsl.fmrib.ox.ac.uk/fsl/fslwiki/FEAT",
-    "version": "6.0.4_inc0.8.5"
+    "version": "6.0.4_inc0.8.7"
 }

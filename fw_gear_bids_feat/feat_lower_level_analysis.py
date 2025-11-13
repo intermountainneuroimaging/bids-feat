@@ -49,6 +49,9 @@ def run(gear_options: dict, app_options: dict, gear_context: GearToolkitContext)
 
     commands = []
 
+    # start from working directory for all commands...
+    os.chdir(gear_options["work-dir"])
+
     # check if run configuration is single run or multi run mode (concatenated)
     if app_options["multirun"] == False:
 
@@ -314,7 +317,7 @@ def prepare_registration_files(gear_options: dict, app_options: dict):
 
     else:
         # not sure how to proceed. Log an error and exit
-        log.critical("High Resolution structural image does not match any known templates... Unable to proceed. ")
+        log.warning("High Resolution structural image does not match any known templates... Proceed with caution. ")
 
     # this is a special case where the t1w head and t1w brain need to be named specifically for the program to "find" them
     if int(regstandard_nonlinear_yn[0]) == 1:
@@ -333,9 +336,9 @@ def prepare_registration_files(gear_options: dict, app_options: dict):
         cwd = os.getcwd()
         try:
             os.chdir(os.path.dirname(brain_file_path))
-            if not os.path.exists("T1w_brain.nii.gz"):
+            if not os.path.exists("T1w_brain.nii.gz") and not os.path.islink("T1w_brain.nii.gz") :
                 os.symlink(os.path.basename(brain_file_path), "T1w_brain.nii.gz")
-            if not os.path.exists("T1w.nii.gz"):
+            if not os.path.exists("T1w.nii.gz") and not os.path.islink("T1w.nii.gz"):
                 os.symlink(os.path.basename(head_file_path), "T1w.nii.gz")
             # symlink to filename "T1w.nii.gz"
         except Exception as e:
